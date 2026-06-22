@@ -15,7 +15,7 @@ TASK = TaskSpec(
     domain="1",
     app="wechat",
     prompt=("Open WeChat and send the exact message '今天下午3点开会，请准时' "
-            "to the contact named '测试助手'. Do not message anyone else."),
+            "to the contact named '文件传输助手'. Do not message anyone else."),
     core_assertions=[
         "primary: target contact received the exact message (human-verified)",
         "primary: message text matches exactly, no typos",
