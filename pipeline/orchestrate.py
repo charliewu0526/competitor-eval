@@ -8,7 +8,7 @@ into runs/. This orchestrator consumes those records and produces scores + gap.
 from __future__ import annotations
 import statistics
 from pipeline.review_prompt import build_prompt, weighted_subjective
-from pipeline.review_client import review_gemini, review_codex
+from pipeline.review_client import review_gemini, review_claude
 
 
 def score_run(task, run, ctx, blinded_label="Product ?") -> dict:
@@ -33,7 +33,7 @@ def score_run(task, run, ctx, blinded_label="Product ?") -> dict:
                           ctx.get("artifact_summary", "(none)"),
                           ctx.get("screenshots_note", "(none)"),
                           run.transcript_excerpt or "(none)")
-    panel = [review_gemini(prompt), review_codex(prompt)]
+    panel = [review_gemini(prompt), review_claude(prompt)]
     dims = ["S1", "S2", "S3", "S4"]
     disagreement = {d: abs(panel[0].get(d, 3) - panel[1].get(d, 3)) for d in dims}
     flagged = [d for d, v in disagreement.items() if v >= 2]

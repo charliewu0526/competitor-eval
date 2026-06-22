@@ -1,8 +1,8 @@
-"""Dual-AI review client. Calls Gemini + Codex(OpenAI) via HTTP.
+"""Dual-AI review client. Panel = Gemini + Claude (different families -> anti same-family bias).
 
-Keys come from env (injected by violoop secrets): GEMINI_API_KEY, OPENAI_API_KEY.
-If a key is missing, that panelist returns a DRY-RUN stub so the pipeline still
-flows end-to-end without credentials. All traffic honors HTTPS_PROXY if set.
+Keys from env (violoop secrets): GEMINI_API_KEY, CLAUDE_API_KEY.
+Missing key -> that panelist returns a DRY-RUN stub so the pipeline still flows.
+All traffic honors HTTPS_PROXY if set.
 """
 from __future__ import annotations
 import os, json, urllib.request
@@ -29,27 +29,38 @@ def _parse_scores(text: str) -> dict:
     return {"error": "unparseable", "raw": text[:300]}
 
 
+def _stub(name: str) -> dict:
+    return {"panelist": name, "dry_run": True,
+            "S1": 3, "S2": 3, "S3": 3, "S4": 3, "justifications": {}}
+
+
 def review_gemini(prompt: str) -> dict:
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
-        return {"panelist": "gemini", "dry_run": True,
-                "S1": 3, "S2": 3, "S3": 3, "S4": 3, "justifications": {}}
+        return _stub("gemini")
     url = ("https://generativelanguage.googleapis.com/v1beta/models/"
            f"gemini-2.5-pro:generateContent?key={key}")
     body = {"contents": [{"parts": [{"text": prompt}]}]}
-    out = _post(url, {"Content-Type": "application/json"}, body)
-    txt = out["candidates"][0]["content"]["parts"][0]["text"]
-    return {"panelist": "gemini", "dry_run": False, **_parse_scores(txt)}
+    try:
+        out = _post(url, {"Content-Type": "application/json"}, body)
+        txt = out["candidates"][0]["content"]["parts"][0]["text"]
+        return {"panelist": "gemini", "dry_run": False, **_parse_scores(txt)}
+    except Exception as ex:
+        return {"panelist": "gemini", "dry_run": False, "error": str(ex)[:200]}
 
 
-def review_codex(prompt: str) -> dict:
-    key = os.environ.get("OPENAI_API_KEY")
+def review_claude(prompt: str) -> dict:
+    key = os.environ.get("CLAUDE_API_KEY")
     if not key:
-        return {"panelist": "codex", "dry_run": True,
-                "S1": 3, "S2": 3, "S3": 3, "S4": 3, "justifications": {}}
-    url = "https://api.openai.com/v1/chat/completions"
-    body = {"model": "gpt-5-codex", "messages": [{"role": "user", "content": prompt}]}
-    hdr = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
-    out = _post(url, hdr, body)
-    txt = out["choices"][0]["message"]["content"]
-    return {"panelist": "codex", "dry_run": False, **_parse_scores(txt)}
+        return _stub("claude")
+    url = "https://api.anthropic.com/v1/messages"
+    hdr = {"Content-Type": "application/json", "x-api-key": key,
+           "anthropic-version": "2023-06-01"}
+    body = {"model": "claude-sonnet-4-5", "max_tokens": 1024,
+            "messages": [{"role": "user", "content": prompt}]}
+    try:
+        out = _post(url, hdr, body)
+        txt = out["content"][0]["text"]
+        return {"panelist": "claude", "dry_run": False, **_parse_scores(txt)}
+    except Exception as ex:
+        return {"panelist": "claude", "dry_run": False, "error": str(ex)[:200]}
