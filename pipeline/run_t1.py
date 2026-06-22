@@ -30,7 +30,8 @@ def build_run(d: dict):
     )
     ctx = {"artifact_summary": d.get("artifact_summary", "(none)"),
            "screenshots_note": d.get("screenshots_note", "(none)")}
-    blind = {"vio": "Product A", "simular": "Product B"}.get(d["product"], "Product ?")
+    blind = {"vio": "Product A", "open_interpreter": "Product B",
+             "simular": "Product B"}.get(d["product"], "Product ?")
     return rr, score_run(TASK, rr, ctx, blind)
 
 
@@ -57,7 +58,9 @@ def main():
         _, sc = build_run(d)
         evals.append(sc)
         by_product[sc["product"]] = sc.get("sample_score", 0.0) or 0.0
-    gap = compute_gap(by_product.get("vio", 0.0), by_product.get("simular", 0.0))
+    competitor = next((k for k in by_product if k != "vio"), None)
+    gap = compute_gap(by_product.get("vio", 0.0),
+                      by_product.get(competitor, 0.0) if competitor else 0.0)
     out = render_board(gap, evals, str(ROOT / "board" / "domain1-board.md"))
     print(f"board -> {out}")
     print(json.dumps({"gap": gap, "evals": evals}, ensure_ascii=False, indent=2))
