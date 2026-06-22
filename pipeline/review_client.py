@@ -1,7 +1,10 @@
-"""Dual-AI review client. Panel = Gemini + Claude (different families -> anti same-family bias).
+"""Dual-AI review client. Panel = Gemini + Claude(via AWS Bedrock).
 
-Keys from env (violoop secrets): GEMINI_API_KEY, CLAUDE_API_KEY.
-Missing key -> that panelist returns a DRY-RUN stub so the pipeline still flows.
+Different model families -> guards against same-family bias.
+Keys/config from env (violoop secrets):
+  GEMINI_API_KEY
+  AWS_BEARER_TOKEN_BEDROCK, BEDROCK_REGION, BEDROCK_CLAUDE_MODEL_ID, CLAUDE_MAX_TOKENS
+Missing config -> that panelist returns a DRY-RUN stub so the pipeline still flows.
 All traffic honors HTTPS_PROXY if set.
 """
 from __future__ import annotations
@@ -10,7 +13,7 @@ import os, json, urllib.request
 PROXY = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 
 
-def _post(url: str, headers: dict, payload: dict, timeout: int = 90) -> dict:
+def _post(url: str, headers: dict, payload: dict, timeout: int = 120) -> dict:
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     if PROXY:
@@ -50,13 +53,17 @@ def review_gemini(prompt: str) -> dict:
 
 
 def review_claude(prompt: str) -> dict:
-    key = os.environ.get("CLAUDE_API_KEY")
-    if not key:
+    token = os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
+    region = os.environ.get("BEDROCK_REGION") or os.environ.get("AWS_REGION") or "ap-southeast-1"
+    model = os.environ.get("BEDROCK_CLAUDE_MODEL_ID", "global.anthropic.claude-opus-4-8")
+    max_tokens = int(os.environ.get("CLAUDE_MAX_TOKENS", "4096"))
+    if not token:
         return _stub("claude")
-    url = "https://api.anthropic.com/v1/messages"
-    hdr = {"Content-Type": "application/json", "x-api-key": key,
-           "anthropic-version": "2023-06-01"}
-    body = {"model": "claude-sonnet-4-5", "max_tokens": 1024,
+    base = os.environ.get("BEDROCK_RUNTIME_BASE_URL") or \
+        f"https://bedrock-runtime.{region}.amazonaws.com"
+    url = f"{base}/model/{model}/invoke"
+    hdr = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    body = {"anthropic_version": "bedrock-2023-05-31", "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": prompt}]}
     try:
         out = _post(url, hdr, body)

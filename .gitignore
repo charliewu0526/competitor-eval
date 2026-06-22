@@ -4,3 +4,4 @@ runs/*.json
 board/*.md
 __pycache__/
 *.pyc
+.env
