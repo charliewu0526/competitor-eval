@@ -1,2 +1,6 @@
 *.bak
 .DS_Store
+runs/*.json
+board/*.md
+__pycache__/
+*.pyc
