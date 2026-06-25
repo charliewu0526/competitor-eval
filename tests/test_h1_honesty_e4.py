@@ -73,9 +73,15 @@ class _SeamCase(unittest.TestCase):
         self._orig = (orchestrate.review_gemini, orchestrate.review_claude)
         orchestrate.review_gemini = _fake_panelist("gemini")
         orchestrate.review_claude = _fake_panelist("claude")
+        # Hermetic: pin the panel to the two faked members, independent of the
+        # production default (A1 made it deepseek/glm/claude — which would hit
+        # the real network with live keys). Honesty tests must stay OFFLINE.
+        self._orig_panel = orchestrate.PANELISTS
+        orchestrate.PANELISTS = ("review_gemini", "review_claude")
 
     def tearDown(self):
         orchestrate.review_gemini, orchestrate.review_claude = self._orig
+        orchestrate.PANELISTS = self._orig_panel
 
 
 class H1InScoreOutput(_SeamCase):

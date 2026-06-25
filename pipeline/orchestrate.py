@@ -7,14 +7,26 @@ into runs/. This orchestrator consumes those records and produces scores + gap.
 """
 from __future__ import annotations
 from pipeline.review_prompt import build_prompt, DIMENSIONS
-from pipeline.review_client import review_gemini, review_claude
+from pipeline.review_client import (
+    review_deepseek, review_glm, review_claude, review_gemini,
+)
 from pipeline import aggregate as AGG
 
-# E3: the review panel is generalized to N panelists. Members are resolved by
-# NAME at call time (globals()[...]) so tests can still monkeypatch
-# orchestrate.review_gemini / review_claude, and A1 (#19) can extend this tuple
-# to the real DeepSeek + GLM + Claude panel without touching aggregation.
-PANELISTS = ("review_gemini", "review_claude")
+# E3/A1: the review panel is generalized to N panelists. Members are resolved by
+# NAME at call time (globals()[...]) so tests can monkeypatch
+# orchestrate.review_<name> with in-memory fakes, and the panel can be swapped
+# WITHOUT touching aggregation.
+#
+# A1 (#19): production panel = DeepSeek + GLM + Claude (两中一西) — guards against
+# same-family bias and fits Chinese desktop scenarios. Override via env
+# REVIEW_PANEL="review_deepseek,review_glm,review_claude" to reconfigure members
+# without code changes (acceptance: 面板成员可配置).
+import os as _os
+
+_DEFAULT_PANEL = ("review_deepseek", "review_glm", "review_claude")
+PANELISTS = tuple(
+    m.strip() for m in _os.environ.get("REVIEW_PANEL", "").split(",") if m.strip()
+) or _DEFAULT_PANEL
 
 
 def _run_panel(prompt: str) -> list[dict]:

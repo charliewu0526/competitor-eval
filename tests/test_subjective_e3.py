@@ -166,9 +166,15 @@ class _SeamCase(unittest.TestCase):
 
     def setUp(self):
         self._orig = (orchestrate.review_gemini, orchestrate.review_claude)
+        # E3 tests are hermetic: pin the panel to the two members they patch,
+        # independent of the production default (A1 changed it to deepseek/glm/
+        # claude). This keeps aggregation tests offline + deterministic.
+        self._orig_panel = orchestrate.PANELISTS
+        orchestrate.PANELISTS = ("review_gemini", "review_claude")
 
     def tearDown(self):
         orchestrate.review_gemini, orchestrate.review_claude = self._orig
+        orchestrate.PANELISTS = self._orig_panel
 
     def _install(self, p0, p1):
         orchestrate.review_gemini = lambda prompt: p0
