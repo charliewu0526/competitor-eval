@@ -20,12 +20,26 @@ ANTI_BIAS = """ANTI-BIAS RULES (mandatory):
 - EVIDENCE: every score needs a one-line justification grounded in the artifact/screenshots."""
 
 
+S5_ANCHORS = """S5 EXPERIENCE — score ONLY from process evidence (transcript/screenshots), using anchors:
+  5 = fully observable & controllable throughout (every step knowable, interruptible)
+  3 = partial black-box (some steps opaque)
+  1 = total black-box (you cannot tell what it did)
+If there is NO process evidence at all, OMIT S5 (leave it null) rather than guessing — "拿不到" is not "差"."""
+
+DEFECTS_RULE = """DEFECTS (scoring/defect split): list EVERY concrete flaw you spot in `defects` as short
+one-line strings, even on an otherwise high-scoring run. Defects are recorded separately and do
+NOT lower the scores — so do not depress a score to "punish" a flaw; score the dimension honestly
+AND report the flaw. Each numeric score still needs a one-line justification or it is discarded."""
+
+
 def build_prompt(task_prompt: str, blinded_label: str, artifact_summary: str,
                  screenshots_note: str, transcript_excerpt: str) -> str:
     dims = "\n".join(f"- {c} {name} (weight {w})" for c, name, w in DIMENSIONS)
     return f"""You are a strict evaluator of desktop-agent task outputs. Score ONLY what
-objective assertions cannot judge. Return JSON: {{"S1":int,"S2":int,"S3":int,"S4":int,
-"justifications":{{"S1":str,"S2":str,"S3":str,"S4":str}}}}. Each score 1-5 (1=poor,3=acceptable,5=excellent).
+objective assertions cannot judge. Return JSON:
+{{"S1":int,"S2":int,"S3":int,"S4":int,"S5":int|null,
+"justifications":{{"S1":str,"S2":str,"S3":str,"S4":str,"S5":str}},
+"defects":[str]}}. Each score 1-5 (1=poor,3=acceptable,5=excellent).
 
 TASK GIVEN TO THE AGENT:
 {task_prompt}
@@ -41,8 +55,12 @@ SCREENSHOTS:
 TRIMMED TRANSCRIPT (not raw — excerpt only):
 {transcript_excerpt}
 
-DIMENSIONS TO SCORE:
+CAPABILITY DIMENSIONS TO SCORE:
 {dims}
+
+{S5_ANCHORS}
+
+{DEFECTS_RULE}
 
 {ANTI_BIAS}
 """

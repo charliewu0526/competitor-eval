@@ -29,10 +29,15 @@ def render_board(gap: dict, evals: list[dict], out_path: str,
         flags = []
         if e.get("cross_layer"): flags.append("cross-layer")
         if e.get("disagreement_flagged"): flags.append("disagree:" + ",".join(e["disagreement_flagged"]))
+        if e.get("defects"): flags.append(f"defects:{len(e['defects'])}")
         if e.get("dry_run"): flags.append("DRY-RUN")
         if not e.get("scored"): flags.append("not-scored:" + e.get("reason", ""))
         subj = e.get("subjective")
-        subj_norm = "-" if not subj else f"{(sum(subj.values())/len(subj)-1)/4:.2f}"
+        # E3: subjective is dim->median (S5 may be None). Normalize over the
+        # non-None capability dims only.
+        cap_vals = [] if not subj else [subj[d] for d in ("S1", "S2", "S3", "S4")
+                                        if subj.get(d) is not None]
+        subj_norm = "-" if not cap_vals else f"{(sum(cap_vals)/len(cap_vals)-1)/4:.2f}"
         lines.append(
             f"| {e['product']} | {e['run_idx']} | {e['gate']} | "
             f"{e['objective_ratio']:.2f} | {subj_norm} | "

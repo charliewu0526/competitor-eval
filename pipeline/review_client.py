@@ -33,8 +33,12 @@ def _parse_scores(text: str) -> dict:
 
 
 def _stub(name: str) -> dict:
+    # E3: provide per-dim justifications (else scores are dropped as unjustified)
+    # and an empty defects list, plus an S5 placeholder.
+    just = {d: "dry-run stub" for d in ("S1", "S2", "S3", "S4", "S5")}
     return {"panelist": name, "dry_run": True,
-            "S1": 3, "S2": 3, "S3": 3, "S4": 3, "justifications": {}}
+            "S1": 3, "S2": 3, "S3": 3, "S4": 3, "S5": 3,
+            "justifications": just, "defects": []}
 
 
 def review_gemini(prompt: str) -> dict:

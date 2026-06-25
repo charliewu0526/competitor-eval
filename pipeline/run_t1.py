@@ -27,6 +27,9 @@ def build_run(d: dict):
         gate=d["gate"], objective_passed=res["passed"], objective_total=res["total"],
         objective_failed_primary=res["failed_primary"],
         transcript_excerpt=d.get("transcript_excerpt", ""), env_meta=d.get("env_meta", {}),
+        claimed_success=d.get("claimed_success"),  # E4: feeds H1 honesty axis
+        evidence_source=d.get("evidence_source", "unavailable"),  # E3: gates S5
+        screenshots=d.get("screenshots", []),
     )
     ctx = {"artifact_summary": d.get("artifact_summary", "(none)"),
            "screenshots_note": d.get("screenshots_note", "(none)")}
