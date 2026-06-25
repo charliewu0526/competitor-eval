@@ -1,12 +1,26 @@
 """T1 pipeline data model. One eval = task x product x run.
 
 GATE -> OBJECTIVE -> SUBJECTIVE, per rubric-v0-domain1.md.
+v2 (F1): TaskSpec gains tier/kind/desktop/dirty-data fields; RunRecord gains
+cost + evidence_source + claimed_success (feeds H1). New fields default so old
+synthetic RunRecords still load. Enum fields are validated; heavy dirty-data
+requires known_edge_cases.
 """
 from __future__ import annotations
 import json, time, pathlib
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields as dc_fields
 
 GATE_VALUES = ("native-operable", "api-or-integration", "cannot-reach")
+TIER_VALUES = ("core-common", "vio-key", "rival-signature", "stress")
+KIND_VALUES = ("task-exam", "capability-probe")
+DIRTY_VALUES = ("none", "light", "heavy")
+COST_SOURCE_VALUES = ("self-report", "proxy", "unavailable")
+EVIDENCE_SOURCE_VALUES = ("log", "screenshot", "recording", "unavailable")
+
+
+def _check(name: str, val, allowed: tuple) -> None:
+    if val not in allowed:
+        raise ValueError(f"{name} must be one of {allowed}, got {val!r}")
 
 
 @dataclass
@@ -17,6 +31,22 @@ class TaskSpec:
     prompt: str                 # the instruction given to each product
     core_assertions: list[str]  # 1a assertion descriptions (primary-goal etc.)
     expects_file: bool = False  # whether an artifact file is produced
+    # --- v2 fields ---
+    tier: str = "core-common"               # TIER_VALUES; v1 only fills core-common
+    kind: str = "task-exam"                 # KIND_VALUES
+    requires_local_desktop: bool = True     # feeds GATE derivation (E1)
+    dirty_data_level: str = "none"          # DIRTY_VALUES; human/verifier-set final
+    dirty_data_level_suggested: str | None = None  # generator-AI proposal (coexists)
+    known_edge_cases: list[str] = field(default_factory=list)  # required iff heavy
+
+    def __post_init__(self) -> None:
+        _check("tier", self.tier, TIER_VALUES)
+        _check("kind", self.kind, KIND_VALUES)
+        _check("dirty_data_level", self.dirty_data_level, DIRTY_VALUES)
+        if self.dirty_data_level_suggested is not None:
+            _check("dirty_data_level_suggested", self.dirty_data_level_suggested, DIRTY_VALUES)
+        if self.dirty_data_level == "heavy" and not self.known_edge_cases:
+            raise ValueError("dirty_data_level='heavy' requires non-empty known_edge_cases")
 
 
 @dataclass
@@ -33,6 +63,19 @@ class RunRecord:
     transcript_excerpt: str = ""
     env_meta: dict = field(default_factory=dict)
     ts: float = field(default_factory=time.time)
+    # --- v2 fields (default => old synthetic RunRecords still load) ---
+    cost_input_tokens: int = 0
+    cost_output_tokens: int = 0
+    cost_model_calls: int = 0
+    cost_usd: float | None = None           # None => not computed yet
+    cost_source: str = "unavailable"        # COST_SOURCE_VALUES
+    evidence_source: str = "unavailable"    # EVIDENCE_SOURCE_VALUES
+    claimed_success: bool | None = None      # self-report; feeds H1 (E4)
+
+    def __post_init__(self) -> None:
+        _check("gate", self.gate, GATE_VALUES)
+        _check("cost_source", self.cost_source, COST_SOURCE_VALUES)
+        _check("evidence_source", self.evidence_source, EVIDENCE_SOURCE_VALUES)
 
     @property
     def objective_ratio(self) -> float:
