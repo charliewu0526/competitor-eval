@@ -14,6 +14,7 @@ from pipeline.schema import RunRecord
 from pipeline import objective as O
 from pipeline.orchestrate import score_run, compute_gap
 from pipeline.board import render_board
+from pipeline import findings as FIND
 from pipeline.registry import default_registry
 from pipeline.gate import gate_for
 from tasks.T1_wechat_send import TASK, assertions
@@ -78,17 +79,28 @@ def main():
     if not raw:
         print("no run files in runs/ — use --demo or drop operator run JSONs first.")
         return
-    evals, by_product = [], {}
+    evals, by_product, ev_map = [], {}, {}
     for d in raw:
-        _, sc = build_run(d)
+        rr, sc = build_run(d)
         evals.append(sc)
         by_product[sc["product"]] = sc.get("sample_score", 0.0) or 0.0
+        # E5: evidence per product, mined from the run record's evidence signals.
+        ev_map[sc["product"]] = {
+            "evidence_source": rr.evidence_source,
+            "screenshots": rr.screenshots,
+            "transcript_excerpt": rr.transcript_excerpt,
+        }
+    ev_map["_env"] = {"app": TASK.app, "domain": TASK.domain}
     competitor = next((k for k in by_product if k != "vio"), None)
     gap = compute_gap(by_product.get("vio", 0.0),
                       by_product.get(competitor, 0.0) if competitor else 0.0)
+    # E5: pre-classify eval products into 「发现 Finding」 (machine tags 疑似 only).
+    found = FIND.classify(TASK.task_id, evals, ev_map)
     out = render_board(gap, evals, str(ROOT / "board" / "domain1-board.md"))
     print(f"board -> {out}")
-    print(json.dumps({"gap": gap, "evals": evals}, ensure_ascii=False, indent=2))
+    print(json.dumps({"gap": gap, "evals": evals,
+                      "findings": [f.as_dict() for f in found]},
+                     ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
