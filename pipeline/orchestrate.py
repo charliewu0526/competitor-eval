@@ -17,13 +17,15 @@ from pipeline import aggregate as AGG
 # orchestrate.review_<name> with in-memory fakes, and the panel can be swapped
 # WITHOUT touching aggregation.
 #
-# A1 (#19): production panel = DeepSeek + GLM + Claude (两中一西) — guards against
-# same-family bias and fits Chinese desktop scenarios. Override via env
-# REVIEW_PANEL="review_deepseek,review_glm,review_claude" to reconfigure members
+# A1 (#19): the design panel = DeepSeek + GLM + Claude (两中一西) — guards against
+# same-family bias and fits Chinese desktop scenarios. Current usable default is
+# DeepSeek + Gemini (live-verified): GLM's key is rate-limited (429) and the
+# Claude account is out of credit, so they're parked until restored. Re-add them
+# (or any members) via env REVIEW_PANEL="review_deepseek,review_glm,review_claude"
 # without code changes (acceptance: 面板成员可配置).
 import os as _os
 
-_DEFAULT_PANEL = ("review_deepseek", "review_glm", "review_claude")
+_DEFAULT_PANEL = ("review_deepseek", "review_gemini")
 PANELISTS = tuple(
     m.strip() for m in _os.environ.get("REVIEW_PANEL", "").split(",") if m.strip()
 ) or _DEFAULT_PANEL

@@ -157,9 +157,13 @@ class PanelConfigurable(unittest.TestCase):
                        transcript_excerpt="opened, did steps, sent")
         return score_run(TASK, rr, {})
 
-    def test_default_panel_is_deepseek_glm_claude(self):
-        self.assertEqual(self._orig_panel,
-                         ("review_deepseek", "review_glm", "review_claude"))
+    def test_default_panel_is_usable_members(self):
+        # Current usable default = DeepSeek + Gemini (GLM rate-limited, Claude
+        # out of credit). All members must be known panelist names so the
+        # globals()[...] resolution in _run_panel works.
+        self.assertEqual(self._orig_panel, ("review_deepseek", "review_gemini"))
+        for name in self._orig_panel:
+            self.assertTrue(hasattr(orchestrate, name))
 
     def test_three_member_panel_scores(self):
         orchestrate.PANELISTS = ("review_deepseek", "review_glm", "review_claude")
