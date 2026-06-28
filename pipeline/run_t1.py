@@ -15,6 +15,7 @@ from pipeline import objective as O
 from pipeline.orchestrate import score_run, compute_gap
 from pipeline.board import render_board
 from pipeline.registry import default_registry
+from pipeline.gate import gate_for
 from tasks.T1_wechat_send import TASK, assertions
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -23,12 +24,27 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 REGISTRY = default_registry()
 
 
+def resolve_gate(d: dict) -> str:
+    """E1: derive the gate from registry capability × task requirement at run time.
+
+    The gate is NOT trusted from the input JSON when the product is in the
+    registry — it is derived (competitor.can_operate_local_desktop × TASK.
+    requires_local_desktop) so cannot-reach is decided by facts, not self-report.
+    Fallback to the JSON-provided gate only for products not yet registered.
+    """
+    try:
+        comp = REGISTRY.get(d["product"])
+    except KeyError:
+        return d["gate"]  # unregistered product -> trust the operator-provided gate
+    return gate_for(comp, TASK)
+
+
 def build_run(d: dict):
     asserts = assertions()
     res = O.run_assertions(asserts, d)
     rr = RunRecord(
         task_id=TASK.task_id, product=d["product"], run_idx=d.get("run_idx", 1),
-        gate=d["gate"], objective_passed=res["passed"], objective_total=res["total"],
+        gate=resolve_gate(d), objective_passed=res["passed"], objective_total=res["total"],
         objective_failed_primary=res["failed_primary"],
         transcript_excerpt=d.get("transcript_excerpt", ""), env_meta=d.get("env_meta", {}),
         claimed_success=d.get("claimed_success"),  # E4: feeds H1 honesty axis
