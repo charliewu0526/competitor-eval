@@ -14,9 +14,13 @@ from pipeline.schema import RunRecord
 from pipeline import objective as O
 from pipeline.orchestrate import score_run, compute_gap
 from pipeline.board import render_board
+from pipeline.registry import default_registry
 from tasks.T1_wechat_send import TASK, assertions
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# F2: blind labels come from the registry (registration order), not hardcoded.
+# Adding a competitor = edit registry/competitors.json, no code change here.
+REGISTRY = default_registry()
 
 
 def build_run(d: dict):
@@ -33,8 +37,10 @@ def build_run(d: dict):
     )
     ctx = {"artifact_summary": d.get("artifact_summary", "(none)"),
            "screenshots_note": d.get("screenshots_note", "(none)")}
-    blind = {"vio": "Product A", "open_interpreter": "Product B",
-             "simular": "Product B"}.get(d["product"], "Product ?")
+    try:
+        blind = REGISTRY.blind_label(d["product"])
+    except KeyError:
+        blind = "Product ?"  # not in registry yet -> unblinded placeholder
     return rr, score_run(TASK, rr, ctx, blind)
 
 

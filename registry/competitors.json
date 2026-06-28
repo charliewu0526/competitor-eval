@@ -1,0 +1,29 @@
+[
+  {
+    "id": "vio",
+    "display_name": "Violoop",
+    "can_operate_local_desktop": true,
+    "is_open_source": false,
+    "repo": null,
+    "status": "active",
+    "reachable_envs": []
+  },
+  {
+    "id": "open_interpreter",
+    "display_name": "Open Interpreter",
+    "can_operate_local_desktop": true,
+    "is_open_source": true,
+    "repo": "https://github.com/OpenInterpreter/open-interpreter",
+    "status": "active",
+    "reachable_envs": []
+  },
+  {
+    "id": "simular",
+    "display_name": "Simular",
+    "can_operate_local_desktop": true,
+    "is_open_source": false,
+    "repo": null,
+    "status": "active",
+    "reachable_envs": []
+  }
+]
