@@ -18,7 +18,7 @@ import sys
 
 import streamlit as st
 
-from pipeline import store, leaderboard as LB, findings as F
+from pipeline import store, leaderboard as LB, findings as F, sampling as SP
 
 
 def _db_path() -> str | None:
@@ -85,6 +85,10 @@ def main():
     st.header("发现 Findings · 机器只标「疑似」，PM 定판")
     _render_findings(con)
 
+    # --- 4. Spot-check queue (G3 layered human sampling) -----------------
+    st.header("抽查队列 Spot-check · 路径外抽查员 (10% / 100% / 100%)")
+    _render_spot_check(con)
+
     # --- export side-capability -----------------------------------------
     st.sidebar.divider()
     if st.sidebar.button("导出 Markdown 快照"):
@@ -124,6 +128,52 @@ def _render_findings(con):
                     product_judgment=None if pj == "(未定)" else pj,
                     final_category=None if fc == "(未定)" else fc)
                 st.success("已写回 SQLite")
+                st.rerun()
+
+
+_STRATUM_LABEL = {
+    "high-risk": "🔴 高风险 (100%)",
+    "contradiction": "🟠 矛盾 (100%)",
+    "normal": "🟢 普通 (10% 抽样)",
+}
+
+
+def _render_spot_check(con):
+    st.caption("主流程入库不等抽查——这是事后异步队列。普通任务随机 10%，"
+               "矛盾项与高风险结论 100% 必查。")
+    if st.button("🔁 重建抽查队列 (扫库分层采样)"):
+        summary = SP.build_queue(con)
+        st.success(
+            f"已入队 {summary['enqueued']} 项 · "
+            f"高风险 {summary['by_stratum']['high-risk']} / "
+            f"矛盾 {summary['by_stratum']['contradiction']} / "
+            f"普通 {summary['by_stratum']['normal']}")
+        st.rerun()
+
+    pending = store.spot_check_queue(con, status="pending")
+    if not pending:
+        st.info("队列为空。pipeline 落库后点「重建抽查队列」生成分层抽查项。")
+        return
+    st.write(f"**待抽查 {len(pending)} 项**(高风险/矛盾在前):")
+    for r in pending:
+        label = _STRATUM_LABEL.get(r["stratum"], r["stratum"])
+        with st.expander(f"#{r['id']} {label} · {r['product']} @ "
+                         f"{r['task_id']}/run{r['run_idx']} — {r['reason']}"):
+            st.write(f"**分层原因:** {r['reason']}")
+            c1, c2 = st.columns([3, 1])
+            note = c1.text_input("抽查备注 (可选)", key=f"scn_{r['id']}")
+            who = c2.text_input("抽查人", value="PM", key=f"scby_{r['id']}")
+            b_ok, b_anom = st.columns(2)
+            if b_ok.button("✅ 一致 (机器没错)", key=f"ok_{r['id']}"):
+                SP.submit_verdict(con, r["id"], status="ok",
+                                  checked_by=who, verdict_note=note)
+                st.success("已记录:一致")
+                st.rerun()
+            if b_anom.button("⚠ 异常 → 触发重校准", key=f"anom_{r['id']}"):
+                SP.submit_verdict(con, r["id"], status="anomaly",
+                                  checked_by=who, verdict_note=note,
+                                  role="reviewer", name="panel")
+                st.warning("已记录:异常。reviewer:panel 授权已按抽查异常触发重校准。")
                 st.rerun()
 
 

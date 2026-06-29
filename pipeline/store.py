@@ -88,6 +88,21 @@ CREATE TABLE IF NOT EXISTS authorizations (
     calibrated_ts        REAL,
     revoked_reason       TEXT
 );
+
+CREATE TABLE IF NOT EXISTS spot_check_queue (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id              TEXT NOT NULL,
+    product              TEXT NOT NULL,
+    run_idx              INTEGER NOT NULL,
+    stratum              TEXT NOT NULL,      -- contradiction | high-risk | normal
+    reason               TEXT NOT NULL,      -- 为什么进队列（分层原因，给人看）
+    status               TEXT NOT NULL DEFAULT 'pending',  -- pending | ok | anomaly
+    checked_by           TEXT,
+    verdict_note         TEXT,
+    enqueued_ts          REAL,
+    checked_ts           REAL,
+    UNIQUE (task_id, product, run_idx)       -- 重建队列更新分层，不覆盖人工结论
+);
 """
 
 
@@ -237,6 +252,50 @@ def set_authorization_status(con: sqlite3.Connection, subject: str, status: str,
 def all_authorizations(con: sqlite3.Connection) -> list[dict]:
     return [dict(r) for r in con.execute(
         "SELECT * FROM authorizations ORDER BY subject")]
+
+
+# --- G3: spot-check queue -------------------------------------------------
+def enqueue_spot_check(con: sqlite3.Connection, *, task_id: str, product: str,
+                       run_idx: int, stratum: str, reason: str) -> int:
+    """Add a run to the spot-check queue. Idempotent on (task,product,run):
+    re-enqueue REFRESHES stratum/reason but NEVER clobbers a human verdict
+    (status/checked_* are left untouched on conflict)."""
+    con.execute("""
+        INSERT INTO spot_check_queue (task_id, product, run_idx, stratum,
+            reason, status, enqueued_ts)
+        VALUES (?,?,?,?,?, 'pending', ?)
+        ON CONFLICT(task_id, product, run_idx) DO UPDATE SET
+            stratum=excluded.stratum, reason=excluded.reason
+    """, (task_id, product, run_idx, stratum, reason, time.time()))
+    con.commit()
+    row = con.execute("""SELECT id FROM spot_check_queue
+                         WHERE task_id=? AND product=? AND run_idx=?""",
+                      (task_id, product, run_idx)).fetchone()
+    return row["id"]
+
+
+def record_spot_check(con: sqlite3.Connection, queue_id: int, *, status: str,
+                      checked_by: str | None = None,
+                      verdict_note: str | None = None) -> None:
+    """Write back a human spot-check result. status: 'ok' | 'anomaly'."""
+    con.execute("""UPDATE spot_check_queue SET status=?, checked_by=?,
+                   verdict_note=?, checked_ts=? WHERE id=?""",
+                (status, checked_by, verdict_note, time.time(), queue_id))
+    con.commit()
+
+
+def spot_check_queue(con: sqlite3.Connection,
+                     status: str | None = None) -> list[dict]:
+    """List queue items, optionally filtered by status. Ordered so 100%
+    strata (contradiction/high-risk) surface above random-sampled normals."""
+    sql = "SELECT * FROM spot_check_queue"
+    args: tuple = ()
+    if status is not None:
+        sql += " WHERE status=?"
+        args = (status,)
+    sql += (" ORDER BY CASE stratum WHEN 'high-risk' THEN 0 "
+            "WHEN 'contradiction' THEN 1 ELSE 2 END, id")
+    return [dict(r) for r in con.execute(sql, args)]
 
 
 # --- reads ----------------------------------------------------------------
