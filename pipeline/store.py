@@ -1,0 +1,193 @@
+"""S1: SQLite single source of truth for runs / scores / findings.
+
+Replaces the hand-maintained Markdown board as the authoritative store. The
+board renders FROM this DB (Streamlit live, or md/html export). PM edits a
+finding's 产品判断 / 最终分类 in the board and it writes back HERE.
+
+Design notes:
+  * Pure stdlib sqlite3, single file, no ORM, no server. (PRD: SQLite 单一数据源)
+  * Idempotent upserts keyed by natural keys so re-running the pipeline updates
+    rows instead of duplicating them.
+  * JSON blobs for nested structures (subjective medians, evidence, repro) —
+    we query/rank on scalar columns, keep detail in JSON.
+  * honesty (h1_honesty) is its OWN column, never folded into capability score.
+"""
+from __future__ import annotations
+import json
+import pathlib
+import sqlite3
+import time
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+DEFAULT_DB = ROOT / "board" / "competitor_eval.db"
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS runs (
+    task_id              TEXT NOT NULL,
+    product              TEXT NOT NULL,
+    run_idx              INTEGER NOT NULL,
+    gate                 TEXT NOT NULL,
+    objective_passed     INTEGER DEFAULT 0,
+    objective_total      INTEGER DEFAULT 0,
+    objective_failed_primary INTEGER DEFAULT 0,
+    evidence_source      TEXT DEFAULT 'unavailable',
+    claimed_success      INTEGER,            -- 0/1/NULL
+    cost_usd             REAL,
+    cost_source          TEXT DEFAULT 'unavailable',
+    transcript_excerpt   TEXT DEFAULT '',
+    ts                   REAL,
+    PRIMARY KEY (task_id, product, run_idx)
+);
+
+CREATE TABLE IF NOT EXISTS scores (
+    task_id              TEXT NOT NULL,
+    product              TEXT NOT NULL,
+    run_idx              INTEGER NOT NULL,
+    gate                 TEXT NOT NULL,
+    scored               INTEGER DEFAULT 1,  -- 0 => not a fair head-to-head
+    reason               TEXT,
+    cross_layer          INTEGER DEFAULT 0,
+    objective_ratio      REAL DEFAULT 0,
+    sample_score         REAL,               -- capability 0..1, NULL when unscored
+    h1_honesty           INTEGER,            -- INDEPENDENT axis 1-5, NULL if no claim
+    subjective_json      TEXT,               -- {dim: median}
+    disagreement_json    TEXT,               -- [dims flagged]
+    defects_json         TEXT,               -- [defect dicts]
+    PRIMARY KEY (task_id, product, run_idx)
+);
+
+CREATE TABLE IF NOT EXISTS findings (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id              TEXT NOT NULL,
+    rule                 TEXT NOT NULL,
+    suspected_category   TEXT NOT NULL,
+    subject              TEXT NOT NULL,
+    phenomenon           TEXT NOT NULL,
+    evidence_json        TEXT,
+    -- PM-fillable (machine leaves NULL):
+    product_judgment     TEXT,
+    final_category       TEXT,
+    -- bug routing:
+    routed_to            TEXT,
+    bug_repro_json       TEXT,
+    created_ts           REAL,
+    UNIQUE (task_id, rule, subject)          -- re-classify updates, not dupes
+);
+"""
+
+
+def connect(db_path: str | pathlib.Path | None = None) -> sqlite3.Connection:
+    p = pathlib.Path(db_path) if db_path else DEFAULT_DB
+    p.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(p))
+    con.row_factory = sqlite3.Row
+    con.executescript(SCHEMA)
+    return con
+
+
+def _b(v):
+    """bool|None -> 0/1/None for SQLite."""
+    return None if v is None else int(bool(v))
+
+
+# --- writes ---------------------------------------------------------------
+def upsert_run(con: sqlite3.Connection, rr) -> None:
+    """Persist a RunRecord (the seam INPUT). Idempotent on (task,product,run)."""
+    con.execute("""
+        INSERT INTO runs (task_id, product, run_idx, gate, objective_passed,
+            objective_total, objective_failed_primary, evidence_source,
+            claimed_success, cost_usd, cost_source, transcript_excerpt, ts)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(task_id, product, run_idx) DO UPDATE SET
+            gate=excluded.gate, objective_passed=excluded.objective_passed,
+            objective_total=excluded.objective_total,
+            objective_failed_primary=excluded.objective_failed_primary,
+            evidence_source=excluded.evidence_source,
+            claimed_success=excluded.claimed_success, cost_usd=excluded.cost_usd,
+            cost_source=excluded.cost_source,
+            transcript_excerpt=excluded.transcript_excerpt, ts=excluded.ts
+    """, (rr.task_id, rr.product, rr.run_idx, rr.gate, rr.objective_passed,
+          rr.objective_total, _b(rr.objective_failed_primary), rr.evidence_source,
+          _b(rr.claimed_success), rr.cost_usd, rr.cost_source,
+          rr.transcript_excerpt, rr.ts))
+    con.commit()
+
+
+def upsert_score(con: sqlite3.Connection, sc: dict) -> None:
+    """Persist a score_run() output dict (the seam OUTPUT)."""
+    con.execute("""
+        INSERT INTO scores (task_id, product, run_idx, gate, scored, reason,
+            cross_layer, objective_ratio, sample_score, h1_honesty,
+            subjective_json, disagreement_json, defects_json)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(task_id, product, run_idx) DO UPDATE SET
+            gate=excluded.gate, scored=excluded.scored, reason=excluded.reason,
+            cross_layer=excluded.cross_layer,
+            objective_ratio=excluded.objective_ratio,
+            sample_score=excluded.sample_score, h1_honesty=excluded.h1_honesty,
+            subjective_json=excluded.subjective_json,
+            disagreement_json=excluded.disagreement_json,
+            defects_json=excluded.defects_json
+    """, (sc["task_id"], sc["product"], sc["run_idx"], sc["gate"],
+          _b(sc.get("scored", True)), sc.get("reason"),
+          _b(sc.get("cross_layer")), sc.get("objective_ratio", 0.0),
+          sc.get("sample_score"), sc.get("h1_honesty"),
+          json.dumps(sc.get("subjective"), ensure_ascii=False),
+          json.dumps(sc.get("disagreement_flagged"), ensure_ascii=False),
+          json.dumps(sc.get("defects"), ensure_ascii=False)))
+    con.commit()
+
+
+def upsert_finding(con: sqlite3.Connection, f) -> int:
+    """Persist a Finding. Re-classify UPDATES machine fields but PRESERVES the
+    PM-filled product_judgment/final_category (machine never overwrites human)."""
+    d = f.as_dict() if hasattr(f, "as_dict") else dict(f)
+    con.execute("""
+        INSERT INTO findings (task_id, rule, suspected_category, subject,
+            phenomenon, evidence_json, product_judgment, final_category,
+            routed_to, bug_repro_json, created_ts)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(task_id, rule, subject) DO UPDATE SET
+            suspected_category=excluded.suspected_category,
+            phenomenon=excluded.phenomenon, evidence_json=excluded.evidence_json,
+            routed_to=excluded.routed_to, bug_repro_json=excluded.bug_repro_json
+    """, (d["task_id"], d["rule"], d["suspected_category"], d["subject"],
+          d["phenomenon"], json.dumps(d.get("evidence"), ensure_ascii=False),
+          d.get("product_judgment"), d.get("final_category"),
+          d.get("routed_to"), json.dumps(d.get("bug_repro"), ensure_ascii=False),
+          time.time()))
+    con.commit()
+    row = con.execute("SELECT id FROM findings WHERE task_id=? AND rule=? AND subject=?",
+                      (d["task_id"], d["rule"], d["subject"])).fetchone()
+    return row["id"]
+
+
+def set_judgment(con: sqlite3.Connection, finding_id: int,
+                 product_judgment: str | None = None,
+                 final_category: str | None = None) -> None:
+    """PM writes back 产品判断 / 最终分类 from the board. This is the ONE place
+    human judgment enters the DB — machine classify() never touches these."""
+    con.execute("""UPDATE findings SET product_judgment=COALESCE(?, product_judgment),
+                   final_category=COALESCE(?, final_category) WHERE id=?""",
+                (product_judgment, final_category, finding_id))
+    con.commit()
+
+
+# --- reads ----------------------------------------------------------------
+def all_scores(con: sqlite3.Connection) -> list[dict]:
+    return [dict(r) for r in con.execute("SELECT * FROM scores ORDER BY task_id, product")]
+
+
+def all_findings(con: sqlite3.Connection) -> list[dict]:
+    return [dict(r) for r in con.execute("SELECT * FROM findings ORDER BY id")]
+
+
+def persist_eval(con: sqlite3.Connection, runs: list, scores: list[dict],
+                 findings: list) -> None:
+    """Bulk-persist one pipeline run's worth of records into all three tables."""
+    for rr in runs:
+        upsert_run(con, rr)
+    for sc in scores:
+        upsert_score(con, sc)
+    for f in findings:
+        upsert_finding(con, f)

@@ -15,6 +15,7 @@ from pipeline import objective as O
 from pipeline.orchestrate import score_run, compute_gap
 from pipeline.board import render_board
 from pipeline import findings as FIND
+from pipeline import store as STORE
 from pipeline.registry import default_registry
 from pipeline.gate import gate_for
 from tasks.T1_wechat_send import TASK, assertions
@@ -79,10 +80,11 @@ def main():
     if not raw:
         print("no run files in runs/ — use --demo or drop operator run JSONs first.")
         return
-    evals, by_product, ev_map = [], {}, {}
+    evals, by_product, ev_map, runrecs = [], {}, {}, []
     for d in raw:
         rr, sc = build_run(d)
         evals.append(sc)
+        runrecs.append(rr)
         by_product[sc["product"]] = sc.get("sample_score", 0.0) or 0.0
         # E5: evidence per product, mined from the run record's evidence signals.
         ev_map[sc["product"]] = {
@@ -96,8 +98,13 @@ def main():
                       by_product.get(competitor, 0.0) if competitor else 0.0)
     # E5: pre-classify eval products into 「发现 Finding」 (machine tags 疑似 only).
     found = FIND.classify(TASK.task_id, evals, ev_map)
+    # S1: SQLite is the single source of truth. Persist runs/scores/findings;
+    # the board renders FROM here. Re-runs upsert (PM judgments preserved).
+    con = STORE.connect()
+    STORE.persist_eval(con, runrecs, evals, found)
+    con.close()
     out = render_board(gap, evals, str(ROOT / "board" / "domain1-board.md"))
-    print(f"board -> {out}")
+    print(f"board -> {out}  |  db -> {STORE.DEFAULT_DB}")
     print(json.dumps({"gap": gap, "evals": evals,
                       "findings": [f.as_dict() for f in found]},
                      ensure_ascii=False, indent=2))

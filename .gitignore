@@ -5,3 +5,7 @@ board/*.md
 __pycache__/
 *.pyc
 .env
+board/competitor_eval.db
+board/board-snapshot.db
+__pycache__/
+*.pyc
