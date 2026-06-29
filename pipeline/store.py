@@ -73,6 +73,21 @@ CREATE TABLE IF NOT EXISTS findings (
     created_ts           REAL,
     UNIQUE (task_id, rule, subject)          -- re-classify updates, not dupes
 );
+
+CREATE TABLE IF NOT EXISTS authorizations (
+    subject              TEXT PRIMARY KEY,   -- "reviewer:panel" | "verifier:claude"
+    role                 TEXT NOT NULL,      -- "reviewer" | "verifier"
+    status               TEXT NOT NULL,      -- authorized | revoked | uncalibrated
+    kappa                REAL,               -- Cohen's kappa vs human gold (recorded)
+    agreement            REAL,               -- raw observed agreement (recorded)
+    n_samples            INTEGER DEFAULT 0,
+    model_fingerprint    TEXT,               -- panel members + model versions
+    rubric_fingerprint   TEXT,               -- hash of dims + anchors
+    bias_profile_json    TEXT,               -- per-model 宽严 offset, RECORD-ONLY
+    confusion_json       TEXT,               -- kappa confusion matrix (audit)
+    calibrated_ts        REAL,
+    revoked_reason       TEXT
+);
 """
 
 
@@ -171,6 +186,57 @@ def set_judgment(con: sqlite3.Connection, finding_id: int,
                    final_category=COALESCE(?, final_category) WHERE id=?""",
                 (product_judgment, final_category, finding_id))
     con.commit()
+
+
+# --- G2: authorization records -------------------------------------------
+def upsert_authorization(con: sqlite3.Connection, a: dict) -> None:
+    """Persist an authorization record (the G2 calibrate/check output).
+
+    Idempotent on `subject`. Stores kappa/agreement/bias as RECORD-ONLY data —
+    nothing here ever feeds back into a run's sample_score (ADR-0005/0011).
+    """
+    con.execute("""
+        INSERT INTO authorizations (subject, role, status, kappa, agreement,
+            n_samples, model_fingerprint, rubric_fingerprint, bias_profile_json,
+            confusion_json, calibrated_ts, revoked_reason)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(subject) DO UPDATE SET
+            role=excluded.role, status=excluded.status, kappa=excluded.kappa,
+            agreement=excluded.agreement, n_samples=excluded.n_samples,
+            model_fingerprint=excluded.model_fingerprint,
+            rubric_fingerprint=excluded.rubric_fingerprint,
+            bias_profile_json=excluded.bias_profile_json,
+            confusion_json=excluded.confusion_json,
+            calibrated_ts=excluded.calibrated_ts,
+            revoked_reason=excluded.revoked_reason
+    """, (a["subject"], a["role"], a["status"], a.get("kappa"),
+          a.get("agreement"), a.get("n_samples", 0), a.get("model_fingerprint"),
+          a.get("rubric_fingerprint"),
+          json.dumps(a.get("bias_profile"), ensure_ascii=False),
+          json.dumps(a.get("confusion"), ensure_ascii=False),
+          a.get("calibrated_ts"), a.get("revoked_reason")))
+    con.commit()
+
+
+def get_authorization(con: sqlite3.Connection, subject: str) -> dict | None:
+    row = con.execute("SELECT * FROM authorizations WHERE subject=?",
+                      (subject,)).fetchone()
+    return dict(row) if row else None
+
+
+def set_authorization_status(con: sqlite3.Connection, subject: str, status: str,
+                             revoked_reason: str | None = None) -> None:
+    """Revoke / restore. Revoking does NOT erase the recorded kappa/bias —
+    those stay for audit; only status + reason change."""
+    con.execute("""UPDATE authorizations SET status=?,
+                   revoked_reason=COALESCE(?, revoked_reason) WHERE subject=?""",
+                (status, revoked_reason, subject))
+    con.commit()
+
+
+def all_authorizations(con: sqlite3.Connection) -> list[dict]:
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM authorizations ORDER BY subject")]
 
 
 # --- reads ----------------------------------------------------------------
