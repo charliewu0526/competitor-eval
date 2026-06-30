@@ -19,6 +19,7 @@ import sys
 import streamlit as st
 
 from pipeline import store, leaderboard as LB, findings as F, sampling as SP
+from pipeline import probe as PROBE
 
 
 def _db_path() -> str | None:
@@ -81,6 +82,10 @@ def main():
             matrix_rows.append(row)
         st.dataframe(matrix_rows, use_container_width=True, hide_index=True)
 
+    # --- 2b. Capability probes (X2 path 2) -------------------------------
+    st.header("能力专项 Capability Probes · 卖点对打 (路径二)")
+    _render_probes(con)
+
     # --- 3. Findings with inline PM editing ------------------------------
     st.header("发现 Findings · 机器只标「疑似」，PM 定판")
     _render_findings(con)
@@ -123,6 +128,56 @@ def _render_findings(con):
                               index=fc_opts.index(fc_cur) if fc_cur in fc_opts else 0,
                               key=f"fc_{r['id']}")
             if c3.button("保存", key=f"save_{r['id']}"):
+                store.set_judgment(
+                    con, r["id"],
+                    product_judgment=None if pj == "(未定)" else pj,
+                    final_category=None if fc == "(未定)" else fc)
+                st.success("已写回 SQLite")
+                st.rerun()
+
+
+def _render_probes(con):
+    """X2: capability-probe findings — 卖点对打 + 开源机理证据."""
+    st.caption("PM 手动触发：针对某卖点（如省 token）拿 Vio vs 竞品直接对打。"
+               "开源竞品附「代码机理分析」，让 借鉴/补齐 判断带机理证据而非「人家行」。")
+    rows = PROBE.probe_findings(con)
+    if not rows:
+        st.info("暂无能力专项。跑 `python -m pipeline.run_probe --demo` 或 "
+                "import pipeline.run_probe.trigger() 落库。")
+        return
+    pj_opts = ["(未定)"] + list(F.PRODUCT_JUDGMENT_VALUES)
+    fc_opts = ["(未定)"] + list(F.FINAL_CATEGORY_VALUES)
+    for r in rows:
+        import json as _json
+        ev = _json.loads(r["evidence_json"] or "[]")
+        ca = next((e for e in ev if e.get("source") == "code-analysis"), None)
+        badge = " 🔬机理证据" if ca else ""
+        with st.expander(f"#{r['id']} [{r['subject']}]{badge} · {r['phenomenon'][:70]}"):
+            st.write(f"**现象 (机器，事实):** {r['phenomenon']}")
+            metrics = [e for e in ev if e.get("source") == "probe-metric"]
+            if metrics:
+                st.write("**卖点对打:**")
+                st.dataframe([{"产品": m["product"], "维度": m["dimension"],
+                               "值": m["value"], "单位": m["unit"]}
+                              for m in metrics],
+                             use_container_width=True, hide_index=True)
+            if ca:
+                st.write(f"**🔬 代码机理分析 ({ca['product']} · {ca.get('analyst') or '—'}):**")
+                st.write(ca["mechanism"])
+                if ca.get("refs"):
+                    st.caption("refs: " + ", ".join(ca["refs"]))
+                if ca.get("repo"):
+                    st.caption(f"repo: {ca['repo']}")
+            c1, c2, c3 = st.columns([3, 3, 1])
+            pj_cur = r.get("product_judgment") or "(未定)"
+            fc_cur = r.get("final_category") or "(未定)"
+            pj = c1.selectbox("产品判断 (PM)", pj_opts,
+                              index=pj_opts.index(pj_cur) if pj_cur in pj_opts else 0,
+                              key=f"ppj_{r['id']}")
+            fc = c2.selectbox("最终分类 (PM)", fc_opts,
+                              index=fc_opts.index(fc_cur) if fc_cur in fc_opts else 0,
+                              key=f"pfc_{r['id']}")
+            if c3.button("保存", key=f"psave_{r['id']}"):
                 store.set_judgment(
                     con, r["id"],
                     product_judgment=None if pj == "(未定)" else pj,
