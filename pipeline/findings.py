@@ -47,8 +47,39 @@ class Finding:
     routed_to: str | None = None            # "bug-pipeline" | None
     bug_repro: dict | None = None           # {task, env, steps, evidence}
 
+    def __post_init__(self) -> None:
+        # 出厂安检 (the 门卡): every Finding — no matter which path built it —
+        # must pass the same gate. Programmer errors raise hard; the no-evidence
+        # case is a business decision handled SOFTLY by make_finding() instead.
+        if self.suspected_category not in SUSPECTED_VALUES:
+            raise ValueError(
+                f"suspected_category must be one of {SUSPECTED_VALUES}, "
+                f"got {self.suspected_category!r}")
+        # 机器只标现象不下结论: judgment fields MUST be empty at construction —
+        # they are the PM's to fill later via store.set_judgment(), never the
+        # machine's. A non-None value here means a path is overstepping (a bug).
+        if self.product_judgment is not None:
+            raise ValueError("machine must not set product_judgment at "
+                             "construction — it is PM-filled (见 set_judgment)")
+        if self.final_category is not None:
+            raise ValueError("machine must not set final_category at "
+                             "construction — it is PM-filled (见 set_judgment)")
+
     def as_dict(self) -> dict:
         return asdict(self)
+
+
+def make_finding(**kwargs) -> "Finding | None":
+    """Single soft constructor honoring 无证据不入池.
+
+    Returns None when evidence is empty (a normal business decision — 安静地不
+    产出), so callers can `f = make_finding(...); if f: emit(f)` without each
+    re-implementing the rule. Category / judgment violations still raise HARD
+    via Finding.__post_init__ (those are programmer errors, not business ones).
+    """
+    if not kwargs.get("evidence"):
+        return None
+    return Finding(**kwargs)
 
 
 # --- evidence helper -------------------------------------------------------

@@ -166,5 +166,49 @@ class EvidenceMiningFromScoreDict(unittest.TestCase):
         self.assertTrue(gap.evidence)
 
 
+class FindingGate(unittest.TestCase):
+    """出厂安检 (门卡): Finding.__post_init__ + make_finding soft constructor.
+
+    Q4-decided rules:
+      * illegal suspected_category  -> raise HARD (programmer error)
+      * judgment set at construction -> raise HARD (machine oversteps)
+      * no evidence                  -> SOFT reject via make_finding (returns None)
+    """
+
+    def _ok(self, **over):
+        base = dict(task_id="T1", rule="feature-gap",
+                    suspected_category="feature-gap", subject="simular",
+                    phenomenon="x", evidence=[{"source": "log", "ref": "a"}])
+        base.update(over)
+        return base
+
+    def test_legal_finding_constructs(self):
+        F.Finding(**self._ok())  # no raise
+
+    def test_illegal_category_raises_hard(self):
+        with self.assertRaises(ValueError):
+            F.Finding(**self._ok(suspected_category="not-a-category"))
+
+    def test_machine_cannot_set_product_judgment(self):
+        with self.assertRaises(ValueError):
+            F.Finding(**self._ok(product_judgment="值得借鉴"))
+
+    def test_machine_cannot_set_final_category(self):
+        with self.assertRaises(ValueError):
+            F.Finding(**self._ok(final_category="feature-gap"))
+
+    def test_make_finding_soft_rejects_no_evidence(self):
+        self.assertIsNone(F.make_finding(**self._ok(evidence=[])))
+
+    def test_make_finding_returns_finding_when_evidence_present(self):
+        f = F.make_finding(**self._ok())
+        self.assertIsInstance(f, F.Finding)
+
+    def test_make_finding_still_raises_on_illegal_category(self):
+        # business-soft only applies to evidence; programmer errors stay hard
+        with self.assertRaises(ValueError):
+            F.make_finding(**self._ok(suspected_category="bogus"))
+
+
 if __name__ == "__main__":
     unittest.main()
