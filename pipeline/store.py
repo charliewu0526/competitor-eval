@@ -32,7 +32,10 @@ CREATE TABLE IF NOT EXISTS runs (
     objective_failed_primary INTEGER DEFAULT 0,
     evidence_source      TEXT DEFAULT 'unavailable',
     claimed_success      INTEGER,            -- 0/1/NULL
-    cost_usd             REAL,
+    cost_input_tokens    INTEGER DEFAULT 0,  -- A3: 技术效率 (token 用量)
+    cost_output_tokens   INTEGER DEFAULT 0,
+    cost_model_calls     INTEGER DEFAULT 0,  -- A3: 架构效率 (来回轮数)
+    cost_usd             REAL,               -- A3: 商业效率, NULL=unavailable/缺价
     cost_source          TEXT DEFAULT 'unavailable',
     transcript_excerpt   TEXT DEFAULT '',
     ts                   REAL,
@@ -126,19 +129,24 @@ def upsert_run(con: sqlite3.Connection, rr) -> None:
     con.execute("""
         INSERT INTO runs (task_id, product, run_idx, gate, objective_passed,
             objective_total, objective_failed_primary, evidence_source,
-            claimed_success, cost_usd, cost_source, transcript_excerpt, ts)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            claimed_success, cost_input_tokens, cost_output_tokens,
+            cost_model_calls, cost_usd, cost_source, transcript_excerpt, ts)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(task_id, product, run_idx) DO UPDATE SET
             gate=excluded.gate, objective_passed=excluded.objective_passed,
             objective_total=excluded.objective_total,
             objective_failed_primary=excluded.objective_failed_primary,
             evidence_source=excluded.evidence_source,
-            claimed_success=excluded.claimed_success, cost_usd=excluded.cost_usd,
-            cost_source=excluded.cost_source,
+            claimed_success=excluded.claimed_success,
+            cost_input_tokens=excluded.cost_input_tokens,
+            cost_output_tokens=excluded.cost_output_tokens,
+            cost_model_calls=excluded.cost_model_calls,
+            cost_usd=excluded.cost_usd, cost_source=excluded.cost_source,
             transcript_excerpt=excluded.transcript_excerpt, ts=excluded.ts
     """, (rr.task_id, rr.product, rr.run_idx, rr.gate, rr.objective_passed,
           rr.objective_total, _b(rr.objective_failed_primary), rr.evidence_source,
-          _b(rr.claimed_success), rr.cost_usd, rr.cost_source,
+          _b(rr.claimed_success), rr.cost_input_tokens, rr.cost_output_tokens,
+          rr.cost_model_calls, rr.cost_usd, rr.cost_source,
           rr.transcript_excerpt, rr.ts))
     con.commit()
 
@@ -305,6 +313,36 @@ def all_scores(con: sqlite3.Connection) -> list[dict]:
 
 def all_findings(con: sqlite3.Connection) -> list[dict]:
     return [dict(r) for r in con.execute("SELECT * FROM findings ORDER BY id")]
+
+
+def cost_with_completion(con: sqlite3.Connection) -> list[dict]:
+    """A3: cost read SIDE BY SIDE with完成度 — never cost alone.
+
+    ADR-0008 铁律: 成本必须和「是否真完成」一起看, 否则「摆烂没干完」会伪装成「省 token」.
+    So this join glues each run's cost (tokens/calls/$/source from `runs`) to its
+    completion signals (sample_score/objective_ratio/objective_failed_primary from
+    `scores`). A row with cost_usd present but sample_score=0 is exactly the
+    「省 token=没干活」trap this view makes visible.
+
+    `cost_priced` is True iff cost_usd is a real number (not unavailable / 缺价).
+    """
+    rows = con.execute("""
+        SELECT r.task_id, r.product, r.run_idx,
+               r.cost_input_tokens, r.cost_output_tokens, r.cost_model_calls,
+               r.cost_usd, r.cost_source,
+               s.sample_score, s.objective_ratio, r.objective_failed_primary,
+               s.scored, s.reason, r.gate
+        FROM runs r
+        LEFT JOIN scores s
+          ON r.task_id=s.task_id AND r.product=s.product AND r.run_idx=s.run_idx
+        ORDER BY r.task_id, r.product, r.run_idx
+    """).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["cost_priced"] = d["cost_usd"] is not None
+        out.append(d)
+    return out
 
 
 def persist_eval(con: sqlite3.Connection, runs: list, scores: list[dict],
