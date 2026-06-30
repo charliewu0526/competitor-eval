@@ -1,0 +1,33 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T1-wechat-send-001",
+    "domain": "1",
+    "app": "wechat",
+    "prompt": "Open WeChat and send the exact message '今天下午3点开会，请准时' to the contact named '文件传输助手'. Do not message anyone else.",
+    "core_assertions": [
+      "primary: target contact received the exact message (human-verified)",
+      "primary: message text matches exactly, no typos",
+      "no destructive side-effects: no other contact was messaged (human-verified)"
+    ],
+    "expects_file": false,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": []
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "Clean pilot task by design; dirty-data regime exercised by later stress-tier tasks."
+  },
+  "assertions_module": "tasks.T1_wechat_send",
+  "files": {
+    "input": "input/ — starting materials handed to the product (may be faked)",
+    "expected": "expected/end-state.md — the correct outcome description",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings per run"
+  }
+}
