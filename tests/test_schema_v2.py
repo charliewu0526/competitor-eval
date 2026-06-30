@@ -5,7 +5,9 @@ Covers acceptance: enum rejection, heavy=>known_edge_cases, back-compat load.
 """
 from __future__ import annotations
 import json, tempfile, unittest, pathlib
+from dataclasses import fields as dc_fields
 from pipeline.schema import TaskSpec, RunRecord, save, load_json
+from pipeline import store as STORE
 
 
 def _task(**kw):
@@ -122,6 +124,46 @@ class BackCompat(unittest.TestCase):
             self.assertFalse(back["claimed_success"])
             # reconstruct from disk -> validates again
             RunRecord(**back)
+
+
+class SchemaStoreConsistency(unittest.TestCase):
+    """候选⑤: 一致性守护 — RunRecord 字段 ↔ runs 表列, 出事前提醒.
+
+    RunRecord 的字段定义在三处:数据类(schema)、手写建表 SQL(store)、
+    taskbank 校验(已从数据类派生)。建表 SQL 是手抄的,加字段忘改它会静默丢
+    数据(A3 cost_* 列曾被咬过)。_migrate() 在运行时兜底补列;这道测试在
+    测试期就报警:数据类新增一个【该入库】的标量字段而 SQL 没跟 -> 当场红。
+
+    部分字段【故意不入 runs 表】(列表/dict 不落标量列),列在豁免名单里 ——
+    名单本身就是「为什么这字段不入库」的活文档;新加的豁免必须显式登记。
+    """
+
+    # RunRecord scalar fields that are deliberately NOT persisted as runs columns.
+    _NOT_PERSISTED = {
+        "artifact_path",   # path ref, kept in JSON artifacts, not a ranked column
+        "screenshots",     # list -> not a scalar column
+        "env_meta",        # dict -> not a scalar column
+    }
+
+    def _runs_columns(self):
+        con = STORE.connect(pathlib.Path(tempfile.mkdtemp()) / "t.db")
+        return {r[1] for r in con.execute("PRAGMA table_info(runs)")}
+
+    def test_every_persistable_field_has_a_column(self):
+        cols = self._runs_columns()
+        record_fields = {f.name for f in dc_fields(RunRecord)}
+        should_persist = record_fields - self._NOT_PERSISTED
+        missing = should_persist - cols
+        self.assertEqual(missing, set(),
+                         f"RunRecord 字段没有对应 runs 列(加字段忘改建表 SQL?): "
+                         f"{missing}")
+
+    def test_exemptions_are_real_fields(self):
+        # guard the guard: an exemption must name a real field, else it's stale.
+        record_fields = {f.name for f in dc_fields(RunRecord)}
+        stale = self._NOT_PERSISTED - record_fields
+        self.assertEqual(stale, set(),
+                         f"豁免名单里有不存在的字段(已删除?请清理): {stale}")
 
 
 if __name__ == "__main__":
