@@ -59,6 +59,45 @@ class StoreRoundTrip(unittest.TestCase):
         self.assertEqual(scs[0]["sample_score"], 0.9)
 
 
+class SchemaMigration(unittest.TestCase):
+    """A DB created before A3's cost_* columns must auto-migrate on connect()."""
+
+    def _legacy_runs_ddl(self):
+        # an old runs table: no cost_input/output_tokens / cost_model_calls
+        return ("CREATE TABLE runs (task_id TEXT NOT NULL, product TEXT NOT NULL, "
+                "run_idx INTEGER NOT NULL, gate TEXT NOT NULL, "
+                "evidence_source TEXT DEFAULT 'unavailable', cost_usd REAL, "
+                "cost_source TEXT DEFAULT 'unavailable', ts REAL, "
+                "PRIMARY KEY (task_id, product, run_idx))")
+
+    def test_missing_columns_backfilled(self):
+        import sqlite3
+        path = _tmpdb()
+        raw = sqlite3.connect(path)
+        raw.execute(self._legacy_runs_ddl())
+        raw.execute("INSERT INTO runs (task_id, product, run_idx, gate) "
+                    "VALUES ('T1','vio',1,'native-operable')")
+        raw.commit(); raw.close()
+        # connect() must ALTER the missing cost_* columns in
+        con = store.connect(path)
+        cols = {r[1] for r in con.execute("PRAGMA table_info(runs)")}
+        for c in ("cost_input_tokens", "cost_output_tokens", "cost_model_calls",
+                  "claimed_success", "objective_passed", "transcript_excerpt"):
+            self.assertIn(c, cols, f"{c} not back-filled")
+        # the pre-existing row survives and an upsert with new cols now works
+        rr = RunRecord(task_id="T1", product="vio", run_idx=1,
+                       gate="native-operable", cost_input_tokens=120,
+                       cost_model_calls=2)
+        store.upsert_run(con, rr)
+        row = con.execute("SELECT cost_input_tokens FROM runs "
+                          "WHERE product='vio'").fetchone()
+        self.assertEqual(row[0], 120)
+
+    def test_migrate_idempotent(self):
+        con = store.connect(_tmpdb())          # fresh DB, full schema
+        self.assertEqual(store._migrate(con), [])  # nothing to add second time
+
+
 class LeaderboardRanking(unittest.TestCase):
     def test_ranking_and_matrix(self):
         scores = [

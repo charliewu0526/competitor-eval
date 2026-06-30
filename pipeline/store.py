@@ -109,12 +109,61 @@ CREATE TABLE IF NOT EXISTS spot_check_queue (
 """
 
 
+def _parse_schema_columns(schema: str) -> dict[str, list[tuple[str, str]]]:
+    """Derive {table: [(col_name, full_col_definition), ...]} from the SCHEMA DDL.
+
+    Used to migrate pre-existing DBs: CREATE TABLE IF NOT EXISTS is a no-op on an
+    existing table, so columns added to SCHEMA after a DB was first created never
+    appear. We diff and ALTER them in (see _migrate). Lines that are table-level
+    constraints (PRIMARY KEY (...), UNIQUE (...), FOREIGN KEY ...) are skipped —
+    they aren't columns and can't be added via ALTER anyway.
+    """
+    import re
+    tables: dict[str, list[tuple[str, str]]] = {}
+    for m in re.finditer(r"CREATE TABLE IF NOT EXISTS\s+(\w+)\s*\((.*?)\);",
+                          schema, re.DOTALL | re.IGNORECASE):
+        name, body = m.group(1), m.group(2)
+        cols: list[tuple[str, str]] = []
+        for raw in body.split("\n"):
+            line = raw.split("--", 1)[0].strip().rstrip(",").strip()
+            if not line:
+                continue
+            if re.match(r"(?i)(PRIMARY KEY|UNIQUE|FOREIGN KEY|CHECK|CONSTRAINT)\b", line):
+                continue
+            col = line.split()[0]
+            cols.append((col, line))
+        tables[name] = cols
+    return tables
+
+
+def _migrate(con: sqlite3.Connection) -> list[str]:
+    """Add any SCHEMA columns missing from an existing DB. Returns added "table.col".
+
+    Idempotent + additive only — never drops/retypes. New columns carry their
+    SCHEMA default (or NULL), so back-compat reads keep working. This is what
+    rescues a DB built before A3's cost_* columns were introduced.
+    """
+    added: list[str] = []
+    for table, cols in _parse_schema_columns(SCHEMA).items():
+        have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        if not have:
+            continue  # table doesn't exist yet -> executescript(SCHEMA) created it
+        for col, ddl in cols:
+            if col not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+                added.append(f"{table}.{col}")
+    if added:
+        con.commit()
+    return added
+
+
 def connect(db_path: str | pathlib.Path | None = None) -> sqlite3.Connection:
     p = pathlib.Path(db_path) if db_path else DEFAULT_DB
     p.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(p))
     con.row_factory = sqlite3.Row
-    con.executescript(SCHEMA)
+    con.executescript(SCHEMA)   # creates missing tables
+    _migrate(con)               # back-fills missing columns on pre-existing tables
     return con
 
 
