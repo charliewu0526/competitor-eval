@@ -14,6 +14,10 @@ GATE_VALUES = ("native-operable", "api-or-integration", "cannot-reach")
 TIER_VALUES = ("core-common", "vio-key", "rival-signature", "stress")
 KIND_VALUES = ("task-exam", "capability-probe")
 DIRTY_VALUES = ("none", "light", "heavy")
+# 任务地图: 两组正交标签 (CONTEXT.md「任务地图」). 能力域=在哪操作; 任务性质=多硬.
+CAPABILITY_DOMAIN_VALUES = ("wechat-im", "office-suite", "no-api-app",
+                            "computer-control", "browser-web")
+TASK_NATURE_VALUES = ("simple", "long-horizon", "scheduled", "dirty-data")
 COST_SOURCE_VALUES = ("self-report", "proxy", "unavailable")
 EVIDENCE_SOURCE_VALUES = ("log", "screenshot", "recording", "unavailable")
 
@@ -38,11 +42,16 @@ class TaskSpec:
     dirty_data_level: str = "none"          # DIRTY_VALUES; human/verifier-set final
     dirty_data_level_suggested: str | None = None  # generator-AI proposal (coexists)
     known_edge_cases: list[str] = field(default_factory=list)  # required iff heavy
+    # --- 任务地图: 两组正交标签 (能力域 × 任务性质), 用于评测套件圈定 ---
+    capability_domain: str = "wechat-im"    # CAPABILITY_DOMAIN_VALUES; 在哪操作
+    task_nature: str = "simple"             # TASK_NATURE_VALUES; 任务多硬
 
     def __post_init__(self) -> None:
         _check("tier", self.tier, TIER_VALUES)
         _check("kind", self.kind, KIND_VALUES)
         _check("dirty_data_level", self.dirty_data_level, DIRTY_VALUES)
+        _check("capability_domain", self.capability_domain, CAPABILITY_DOMAIN_VALUES)
+        _check("task_nature", self.task_nature, TASK_NATURE_VALUES)
         if self.dirty_data_level_suggested is not None:
             _check("dirty_data_level_suggested", self.dirty_data_level_suggested, DIRTY_VALUES)
         if self.dirty_data_level == "heavy" and not self.known_edge_cases:

@@ -86,6 +86,15 @@ def validate_meta(meta: dict) -> list[str]:
         problems.append(f"task_spec invalid per F1 schema: {e}")
         return problems
 
+    # 任务地图: every task card must EXPLICITLY declare both orthogonal labels
+    # (能力域 × 任务性质). They carry schema defaults so old synthetic RunRecords
+    # still load, but a task BANK entry that omits them would be silently filed
+    # under the default class — breaking suite圈定. So require them in meta.json.
+    for label in ("capability_domain", "task_nature"):
+        if label not in spec:
+            problems.append(f"task_spec missing '{label}' — every 任务卡 must "
+                            f"declare its 任务地图 label explicitly (不靠默认值)")
+
     # 3. tier × dirty-data cross-check
     if ts.tier == "stress" and ts.dirty_data_level == "none":
         problems.append("tier='stress' but dirty_data_level='none' — a stress "

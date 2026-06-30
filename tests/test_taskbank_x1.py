@@ -17,7 +17,8 @@ def _meta(**spec_over):
                 core_assertions=["primary"], expects_file=False,
                 tier="core-common", kind="task-exam", requires_local_desktop=True,
                 dirty_data_level="none", dirty_data_level_suggested=None,
-                known_edge_cases=[])
+                known_edge_cases=[],
+                capability_domain="wechat-im", task_nature="simple")
     spec.update(spec_over)
     return {"schema": "taskbank-v1", "task_spec": spec,
             "dirty_data": {"suggested_by": "ai:generator", "final_by": "human:charlie"}}

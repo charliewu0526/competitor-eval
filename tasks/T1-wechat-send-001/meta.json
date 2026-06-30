@@ -16,7 +16,9 @@
     "requires_local_desktop": true,
     "dirty_data_level": "none",
     "dirty_data_level_suggested": "none",
-    "known_edge_cases": []
+    "known_edge_cases": [],
+    "capability_domain": "wechat-im",
+    "task_nature": "simple"
   },
   "dirty_data": {
     "suggested_by": "ai:generator",
