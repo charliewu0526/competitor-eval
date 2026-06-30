@@ -25,11 +25,15 @@ PRODUCT_JUDGMENT_VALUES = ("必须补齐", "值得借鉴", "观察中", "不适�
 FINAL_CATEGORY_VALUES = ("bug", "feature-gap", "experience-borrow",
                          "honesty-alert", "not-actionable")
 SUSPECTED_VALUES = ("suspected-bug", "feature-gap", "experience-borrow",
-                    "honesty-alert")
+                    "honesty-alert", "quality-alert")
 
 # Thresholds for the "competitor meaningfully ahead" rules.
 CAPABILITY_LEAD = 0.15   # sample_score gap that counts as a capability lead
 EXPERIENCE_LEAD = 1.0    # S5 median points a competitor must lead by
+# 质量警示门槛: 客观判通过、但某主观维中位 <= 此值 => 面板抓到实质缺陷.
+# S1(质量)是「做对没做对」最直接的维度; 真实评测里「发错人」把它压到 1.
+QUALITY_ALERT_DIM = "S1"
+QUALITY_ALERT_FLOOR = 2.0
 
 
 @dataclass
@@ -223,6 +227,50 @@ def rule_vio_bug(task_id, base, comp, ev) -> "Finding | None":
     return f
 
 
+def _subjective_median(score: dict, dim: str):
+    subj = score.get("subjective") or {}
+    return subj.get(dim)
+
+
+def _panel_defects(score: dict) -> list[dict]:
+    """Collect the panel's defect notes as evidence dicts {by, desc}."""
+    out: list[dict] = []
+    for d in (score.get("defects") or []):
+        if isinstance(d, dict) and d.get("desc"):
+            out.append({"source": "panel-defect",
+                        "ref": f"{d.get('by', '?')}: {d['desc']}"})
+        elif isinstance(d, str) and d.strip():
+            out.append({"source": "panel-defect", "ref": d.strip()})
+    return out
+
+
+def rule_quality_alert(task_id, base, ev) -> "Finding | None":
+    """R6 质量警示: BASELINE passed objectively, but the panel scored a core
+    quality dimension at/under the floor (S1<=2) — a 「带病通过」 signal.
+
+    Independent axis (like H1 honesty): does NOT touch成败 or scores. The run
+    still counts as an objective success; this just surfaces the panel-found
+    defect as its own finding for the PM to 定판. Vio-only (we care about Vio's
+    暗病; competitor quality缺陷 deferred to avoid noise). Evidence = the panel's
+    own defect notes — 无证据不入池: if the panel logged no defects, no finding.
+    """
+    if _is_failed(base):
+        return None                       # only 客观通过 runs qualify
+    med = _subjective_median(base, QUALITY_ALERT_DIM)
+    if med is None or med > QUALITY_ALERT_FLOOR:
+        return None                       # quality floor not breached
+    evid = _panel_defects(base)
+    if not evid:
+        return None                       # 无证据(无面板缺陷说明)不入池
+    return Finding(
+        task_id=task_id, rule="quality-alert", suspected_category="quality-alert",
+        subject=base["product"],
+        phenomenon=(f"基线 {base['product']} 客观判通过，但评审面板将 "
+                    f"{QUALITY_ALERT_DIM}（质量）打到 {med:.1f}（≤{QUALITY_ALERT_FLOOR:.0f}）"
+                    f"，面板指出实质缺陷——疑似「带病通过」"),
+        evidence=evid)
+
+
 def classify(task_id: str, scores: list[dict], evidence: dict | None = None,
              baseline: str = BASELINE) -> list[Finding]:
     """Apply all 5 rules to one task's scored products -> Findings.
@@ -238,6 +286,11 @@ def classify(task_id: str, scores: list[dict], evidence: dict | None = None,
     # R5: baseline self-failure -> bug pipeline (subject = Vio itself).
     if base is not None:
         f = rule_vio_bug(task_id, base, base, evidence)
+        if f:
+            out.append(f)
+        # R6: baseline passed objectively but panel flagged a core quality缺陷
+        # (S1<=2) -> independent 质量警示 (Vio-only, 不污染成败/分数).
+        f = rule_quality_alert(task_id, base, evidence)
         if f:
             out.append(f)
 

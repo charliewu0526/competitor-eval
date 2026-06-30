@@ -166,6 +166,65 @@ class EvidenceMiningFromScoreDict(unittest.TestCase):
         self.assertTrue(gap.evidence)
 
 
+class QualityAlertRule(unittest.TestCase):
+    """R6 质量警示: Vio 客观过但面板把 S1 打到地板 -> 独立警示 (带病通过).
+
+    Grilling 定稿: C 方案 (独立轴, 不污染成败/分数) + S1<=2 门槛 + Vio-only +
+    面板 defects 作证据 (无证据不入池). Mirrors the real eval where DeepSeek +
+    Gemini both flagged 'sent to wrong contact' and S1 floored to 1.
+    """
+
+    def _vio(self, *, s1, defects, failed=False):
+        out = {"product": "vio", "objective_failed_primary": failed,
+               "sample_score": 0.0 if failed else 0.5,
+               "subjective": {"S1": s1, "S2": 4, "S3": 4, "S4": 4, "S5": 4},
+               "defects": defects}
+        return out
+
+    def test_passed_but_low_s1_emits_alert(self):
+        scores = [self._vio(s1=1.0, defects=[
+            {"by": "deepseek", "desc": "sent to 测试助手 not 文件传输助手"},
+            {"by": "gemini", "desc": "wrong contact"}])]
+        fs = F.classify("T1", scores)
+        qa = [f for f in fs if f.suspected_category == "quality-alert"]
+        self.assertEqual(len(qa), 1)
+        self.assertEqual(qa[0].subject, "vio")
+        self.assertEqual(len(qa[0].evidence), 2)        # both defects as evidence
+        self.assertIsNone(qa[0].product_judgment)        # PM fills 定판
+        self.assertIsNone(qa[0].final_category)
+
+    def test_s1_above_floor_no_alert(self):
+        scores = [self._vio(s1=4.0, defects=[{"by": "x", "desc": "nit"}])]
+        fs = F.classify("T1", scores)
+        self.assertEqual([f for f in fs if f.rule == "quality-alert"], [])
+
+    def test_objective_fail_routes_to_bug_not_quality(self):
+        # a failed Vio is a bug (R5), not a 带病通过 quality alert
+        scores = [self._vio(s1=1.0, failed=True,
+                            defects=[{"by": "x", "desc": "broke"}])]
+        scores[0]["reason"] = "primary failed"
+        fs = F.classify("T1", scores, {"vio": [EV()], "_env": {}})
+        cats = {f.suspected_category for f in fs}
+        self.assertIn("suspected-bug", cats)
+        self.assertNotIn("quality-alert", cats)
+
+    def test_low_s1_but_no_defects_not_emitted(self):
+        # 无证据(面板没记缺陷说明)不入池
+        scores = [self._vio(s1=1.0, defects=[])]
+        fs = F.classify("T1", scores)
+        self.assertEqual([f for f in fs if f.rule == "quality-alert"], [])
+
+    def test_competitor_low_s1_not_alerted(self):
+        # Vio-only: a competitor's low S1 does NOT raise a quality alert
+        scores = [self._vio(s1=4.0, defects=[]),
+                  {"product": "simular", "objective_failed_primary": False,
+                   "sample_score": 0.5,
+                   "subjective": {"S1": 1, "S2": 4, "S3": 4, "S4": 4, "S5": 4},
+                   "defects": [{"by": "x", "desc": "bad"}]}]
+        fs = F.classify("T1", scores)
+        self.assertEqual([f for f in fs if f.rule == "quality-alert"], [])
+
+
 class FindingGate(unittest.TestCase):
     """出厂安检 (门卡): Finding.__post_init__ + make_finding soft constructor.
 
