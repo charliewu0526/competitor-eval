@@ -158,6 +158,21 @@ class SameStoreAndBoard(unittest.TestCase):
         runs = con.execute("SELECT product FROM runs WHERE task_id='PB1-token'").fetchall()
         self.assertEqual({r["product"] for r in runs}, {"vio", "open_interpreter"})
 
+    def test_vio_win_persists_runs_but_no_finding(self):
+        # regression: M3 made finding None on a Vio win; persist_probe must NOT
+        # crash trying to upsert a None finding. Runs still land; findings empty.
+        con = self._db()
+        base = _run("vio", task_id="PB-vw", cost_input_tokens=100)
+        rival = _run("open_interpreter", task_id="PB-vw", cost_input_tokens=9000)
+        spec = P.ProbeSpec("PB-vw", "token-cost", "open_interpreter")
+        r = P.run_probe(spec, base, rival)
+        self.assertEqual(r.winner, "vio")
+        fid = P.persist_probe(con, spec, base, rival, r)
+        self.assertIsNone(fid)                       # no finding id
+        self.assertEqual(P.probe_findings(con), [])  # no finding row
+        runs = con.execute("SELECT product FROM runs WHERE task_id='PB-vw'").fetchall()
+        self.assertEqual({x["product"] for x in runs}, {"vio", "open_interpreter"})
+
     def test_reclassify_preserves_pm_judgment(self):
         con = self._db()
         base = _run("vio", cost_input_tokens=5000)

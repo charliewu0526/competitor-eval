@@ -207,16 +207,21 @@ def bm_fmt(v, dim: Dimension) -> str:
 
 
 def persist_probe(con, spec: ProbeSpec, base_run, rival_run,
-                  result: ProbeResult) -> int:
+                  result: ProbeResult) -> "int | None":
     """Land a probe in the SAME SQLite store as path 1 (no parallel universe).
 
-    Persists both RunRecords (seam input) and the probe Finding. The probe's
-    Finding upserts on (task_id=probe_id, rule='capability-probe', subject) so a
-    re-run updates machine fields but PRESERVES the PM's product_judgment /
-    final_category (store.upsert_finding's COALESCE rule). Returns finding id.
+    Persists both RunRecords (seam input) ALWAYS — the metrics belong on the
+    board regardless of outcome. The probe Finding is persisted only when one
+    exists: when Vio wins / ties, result.finding is None (no gap => no 发现),
+    so we skip upsert_finding and return None. Otherwise the Finding upserts on
+    (task_id=probe_id, rule='capability-probe', subject) so a re-run updates
+    machine fields but PRESERVES the PM's product_judgment / final_category
+    (store.upsert_finding's COALESCE rule). Returns the finding id, or None.
     """
     STORE.upsert_run(con, base_run)
     STORE.upsert_run(con, rival_run)
+    if result.finding is None:
+        return None
     return STORE.upsert_finding(con, result.finding)
 
 
