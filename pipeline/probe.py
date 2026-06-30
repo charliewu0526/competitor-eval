@@ -134,14 +134,15 @@ class ProbeResult:
     rival_metric: object
     winner: str | None          # product id, or None if tie / not comparable
     unit: str
-    finding: Finding
+    finding: "Finding | None"   # None when rival did NOT win (no gap => no 发现)
 
     def as_dict(self) -> dict:
         return {"probe_id": self.probe_id, "dimension": self.dimension,
                 "baseline": self.baseline, "rival": self.rival,
                 "baseline_metric": self.baseline_metric,
                 "rival_metric": self.rival_metric, "winner": self.winner,
-                "unit": self.unit, "finding": self.finding.as_dict()}
+                "unit": self.unit,
+                "finding": self.finding.as_dict() if self.finding else None}
 
 
 def run_probe(spec: ProbeSpec, base_run, rival_run,
@@ -176,20 +177,22 @@ def run_probe(spec: ProbeSpec, base_run, rival_run,
             raise ProbeError("code_analysis.product must be the probed rival")
         evidence.append(code_analysis.as_evidence())
 
-    # The rival winning a 卖点 dimension == a feature-gap the PM should weigh.
-    # Vio winning == no gap on this dimension (still recorded for the board).
+    # A 发现 is only emitted when the RIVAL wins the 卖点 dimension — that's the
+    # feature-gap the PM should weigh. When Vio wins (or it's a tie) there is no
+    # gap, so NO Finding is produced (the metrics still live in runs/scores for
+    # the board). Emitting a finding on a Vio win and mislabeling it
+    # "experience-borrow" (=值得借鉴) would pollute the PM's judgment.
     rival_won = winner == spec.rival
-    suspected = "feature-gap" if rival_won else "experience-borrow"
-    verb = "领先" if rival_won else "落后于基线"
-    mech = (f" 机理: {code_analysis.mechanism}" if code_analysis else "")
-    phen = (f"[capability-probe:{dim.label}] {spec.rival} {bm_fmt(rm, dim)} "
-            f"vs 基线 {spec.baseline} {bm_fmt(bm, dim)} — "
-            f"{spec.rival} {verb}.{mech}")
-
-    finding = Finding(
-        task_id=spec.probe_id, rule="capability-probe",
-        suspected_category=suspected, subject=spec.rival,
-        phenomenon=phen, evidence=evidence)
+    finding = None
+    if rival_won:
+        mech = (f" 机理: {code_analysis.mechanism}" if code_analysis else "")
+        phen = (f"[capability-probe:{dim.label}] {spec.rival} {bm_fmt(rm, dim)} "
+                f"vs 基线 {spec.baseline} {bm_fmt(bm, dim)} — "
+                f"{spec.rival} 领先.{mech}")
+        finding = Finding(
+            task_id=spec.probe_id, rule="capability-probe",
+            suspected_category="feature-gap", subject=spec.rival,
+            phenomenon=phen, evidence=evidence)
 
     return ProbeResult(
         probe_id=spec.probe_id, dimension=dim.key, baseline=spec.baseline,

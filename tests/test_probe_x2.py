@@ -57,13 +57,29 @@ class TokenCostProbe(unittest.TestCase):
         self.assertEqual(r.winner, "open_interpreter")
         self.assertEqual(r.finding.suspected_category, "feature-gap")
 
-    def test_baseline_lower_token_wins(self):
-        # flip: Vio cheaper -> baseline wins, not a gap
+    def test_baseline_lower_token_wins_emits_no_finding(self):
+        # flip: Vio cheaper -> baseline wins, no gap -> NO finding (regression for
+        # the X2 bug where a Vio win was mislabeled "experience-borrow"/值得借鉴,
+        # polluting the PM's judgment). Metrics still live on the ProbeResult.
         base = _run("vio", cost_input_tokens=100, cost_output_tokens=50)
         rival = _run("open_interpreter", cost_input_tokens=9000)
         spec = P.ProbeSpec("PB1-token", "token-cost", "open_interpreter")
         r = P.run_probe(spec, base, rival)
         self.assertEqual(r.winner, "vio")
+        self.assertIsNone(r.finding)            # no gap => no 发现
+        self.assertEqual(r.baseline_metric, 150)
+        self.assertEqual(r.rival_metric, 9000)
+
+    def test_vio_win_finding_is_never_experience_borrow(self):
+        # the exact M3 bug: Vio winning must NOT produce a 值得借鉴 finding.
+        base = _run("vio", cost_input_tokens=100)
+        rival = _run("open_interpreter", cost_input_tokens=9000)
+        spec = P.ProbeSpec("PB1-token", "token-cost", "open_interpreter")
+        r = P.run_probe(spec, base, rival)
+        self.assertIsNone(r.finding)
+        # and persisting a Vio-win probe writes no finding row
+        # (covered fully in SameStoreAndBoard; here just assert the result shape)
+        self.assertIsNone(r.as_dict()["finding"])
 
     def test_machine_never_fills_judgment(self):
         spec, base, rival = self._probe()
