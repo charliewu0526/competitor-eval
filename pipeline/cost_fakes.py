@@ -52,8 +52,16 @@ class FakeCostAccountant:
             model=model if model is not None else self.model,
             price_updated=_FAKE_UPDATED)
 
-    def apply_to_run(self, run, **kw) -> dict:
-        out = self.account(**kw)
+    def apply_to_run(self, run, *, model: str | None = None,
+                     input_tokens=None, output_tokens=None,
+                     model_calls=None, cost_source=None) -> dict:
+        # 候选④ H2 fix: mirror CostAccountant.apply_to_run's keyword-only
+        # signature so the fake can't teach callers a looser calling convention
+        # than production. (model defaults to None here — the fake prices off its
+        # own fixed config, not a real table — but the kwarg SHAPE matches.)
+        out = self.account(model=model, input_tokens=input_tokens,
+                           output_tokens=output_tokens, model_calls=model_calls,
+                           cost_source=cost_source)
         run.cost_input_tokens = out["cost_input_tokens"]
         run.cost_output_tokens = out["cost_output_tokens"]
         run.cost_model_calls = out["cost_model_calls"]
