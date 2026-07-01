@@ -28,10 +28,38 @@ function suspectedTag(cat) {
   return <Tag color={s.color}>{s.label}</Tag>;
 }
 
-function eviLine(e, i) {
+// 机器现象里常带黑话前缀,如 "[capability-probe:token 成本(总 token)] xxx".
+// PM 看不懂 capability-probe / S1 之类,这里剥掉机器前缀,只留人能读的正文。
+function humanizePhenomenon(text) {
+  if (!text) return "";
+  let t = String(text);
+  // 去掉开头的 [xxx] 机器标记(如 [capability-probe:...])
+  t = t.replace(/^\s*\[[^\]]*\]\s*/, "");
+  // 常见黑话 -> 人话
+  t = t
+    .replace(/S1（质量）|S1\(质量\)|\bS1\b/g, "质量维度")
+    .replace(/客观判通过/g, "硬性完成度算通过")
+    .replace(/基线\s*/g, "我们(基线)")
+    .replace(/—/g, " — ");
+  return t.trim();
+}
+
+// panel-defect 的 ref 形如 "deepseek: Sent message to ...".
+// 拆出评委名(deepseek/gemini/claude/glm...)和缺陷描述,单独醒目渲染。
+function parseDefect(e) {
+  const ref = (e && e.ref) || "";
+  const m = /^\s*([A-Za-z0-9_\- ]{2,20}?)\s*[:：]\s*(.+)$/s.exec(ref);
+  const judge = m ? m[1].trim() : "评委";
+  const raw = m ? m[2].trim() : ref;
+  // 中文主显:优先库里的权威译文 ref_zh(人工翻译,不失真);没有则退回原文。
+  const zh = e && e.ref_zh ? String(e.ref_zh).trim() : null;
+  return { judge, desc: zh || raw, raw, hasZh: !!zh };
+}
+
+function metricLine(e, i) {
   const src = EVI_SOURCE[e.source] || { label: e.source || "证据", color: "default" };
-  const detail = e.ref
-    ? e.ref
+  const detail = e.mechanism
+    ? `${e.product ? e.product + ":" : ""}${e.mechanism}${e.refs ? "(" + e.refs.join(", ") + ")" : ""}`
     : [e.product, e.dimension, e.value != null ? `${e.value}${e.unit || ""}` : null]
         .filter(Boolean).join(" · ") || JSON.stringify(e);
   return (
@@ -64,6 +92,8 @@ function FindingCard({ f, enums, onSaved }) {
   };
 
   const evidence = Array.isArray(f.evidence) ? f.evidence : [];
+  const defects = evidence.filter((e) => e.source === "panel-defect");
+  const metrics = evidence.filter((e) => e.source !== "panel-defect");
   const decided = f.product_judgment || f.final_category;
 
   return (
@@ -85,19 +115,61 @@ function FindingCard({ f, enums, onSaved }) {
     >
       <p style={{ marginTop: 0 }}>
         <b style={{ color: "#8c8c8c" }}>机器观察到的现象</b>(只陈述事实,不下结论):<br />
-        <span style={{ color: "#262626" }}>{f.phenomenon}</span>
+        <span style={{ color: "#262626" }}>{humanizePhenomenon(f.phenomenon)}</span>
       </p>
 
-      <Collapse
-        ghost size="small"
-        items={[{
-          key: "e",
-          label: <span>证据明细({evidence.length} 条) <InfoTip title="机器给出的原始佐证:评委挑出的毛病、卖点实测数值、或源码机理分析。" /></span>,
-          children: evidence.length
-            ? <List size="small" dataSource={evidence} renderItem={eviLine} />
-            : <span style={{ color: "#8c8c8c" }}>没有附证据。</span>,
-        }]}
-      />
+      {defects.length > 0 && (
+        <div style={{
+          background: "#fff2f0", border: "1px solid #ffccc7",
+          borderRadius: 6, padding: "10px 12px", marginBottom: 12,
+        }}>
+          <div style={{ fontWeight: 600, color: "#cf1322", marginBottom: 6 }}>
+            评委挑出的毛病 <InfoTip title="AI 评审面板指出的实质缺陷。哪个评委挑的都记下来,是判『带病通过』的关键依据。" />
+          </div>
+          <List
+            size="small" split={false} dataSource={defects}
+            renderItem={(e, i) => {
+              const d = parseDefect(e);
+              return (
+                <List.Item key={i} style={{ padding: "2px 0" }}>
+                  <Space align="start" direction="vertical" size={2}>
+                    <Space align="start">
+                      <Tag color="volcano" style={{ marginTop: 2 }}>{d.judge}</Tag>
+                      <span style={{ color: "#434343" }}>{d.desc}</span>
+                    </Space>
+                    {d.hasZh && d.raw && (
+                      <Collapse
+                        ghost size="small"
+                        style={{ marginLeft: 4 }}
+                        items={[{
+                          key: "raw",
+                          label: <span style={{ fontSize: 12, color: "#8c8c8c" }}>评委原话(英文)</span>,
+                          children: <span style={{ color: "#8c8c8c", fontSize: 12 }}>{d.raw}</span>,
+                        }]}
+                      />
+                    )}
+                  </Space>
+                </List.Item>
+              );
+            }}
+          />
+        </div>
+      )}
+
+      {metrics.length > 0 && (
+        <Collapse
+          ghost size="small" defaultActiveKey={["e"]}
+          items={[{
+            key: "e",
+            label: <span>佐证数据({metrics.length} 条) <InfoTip title="机器给出的原始佐证:卖点实测数值、或源码机理分析。" /></span>,
+            children: <List size="small" dataSource={metrics} renderItem={metricLine} />,
+          }]}
+        />
+      )}
+
+      {evidence.length === 0 && (
+        <p style={{ color: "#8c8c8c", marginTop: 0 }}>没有附证据。</p>
+      )}
 
       <Row gutter={12} align="bottom" style={{ marginTop: 12 }}>
         <Col span={9}>

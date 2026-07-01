@@ -10,6 +10,12 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 BACK_PORT=8600
 FRONT_PORT=5273
 
+# Local loopback must bypass any system HTTP proxy, otherwise the Vite dev
+# proxy forwards /api requests to the proxy server and returns 502.
+export NO_PROXY="127.0.0.1,localhost"
+export no_proxy="127.0.0.1,localhost"
+unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy 2>/dev/null || true
+
 kill_port() { lsof -ti tcp:"$1" 2>/dev/null | xargs -r kill 2>/dev/null || true; }
 
 if [[ "${1:-}" == "stop" ]]; then
