@@ -4,6 +4,17 @@ import { WarningOutlined } from "@ant-design/icons";
 import { getCost } from "../api";
 import { InfoTip } from "../glossary.jsx";
 
+// 成本来源诚实标注:self-report=模型自报(可能虚高/虚低)、proxy=代理网关计量、
+// unavailable=拿不到。颜色即语义:自报=橙(存疑)、代理=绿(可信)、拿不到=灰。
+const COST_SOURCE = {
+  "self-report": { label: "模型自报", color: "orange",
+    hint: "数值来自模型自己报的用量,可能不准(自报≠实测),仅供参考。" },
+  "proxy": { label: "代理计量", color: "green",
+    hint: "由代理网关实测计量,较可信。" },
+  "unavailable": { label: "拿不到", color: "default",
+    hint: "这条 run 没有可用的成本来源,数值不可信,别当成『很省』。" },
+};
+
 // A row is the trap "省 token = 没干活" when it spent tokens but scored ~0.
 function isSlackerTrap(r) {
   const spent = (r.cost_input_tokens || 0) + (r.cost_output_tokens || 0) > 0
@@ -47,6 +58,15 @@ export default function Cost() {
       render: (v, r) => (r.cost_priced
         ? <b>${Number(v).toFixed(4)}</b>
         : <Tag>未采集</Tag>),
+    },
+    {
+      title: <span>成本来源 <InfoTip title="这些数字从哪来:代理计量最可信,模型自报存疑,拿不到就别当成『很省』。" /></span>,
+      dataIndex: "cost_source", width: 130,
+      render: (v) => {
+        const s = COST_SOURCE[v] || { label: v || "未知", color: "default", hint: null };
+        const tag = <Tag color={s.color}>{s.label}</Tag>;
+        return s.hint ? <Tooltip title={s.hint}>{tag}</Tooltip> : tag;
+      },
     },
     {
       title: <span>能力分 <InfoTip name="capability" /></span>,
