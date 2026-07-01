@@ -1,0 +1,10 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #f0f2f5;
+}
+.page-title { margin: 0 0 4px; }
+.page-sub { color: #8c8c8c; margin: 0 0 20px; font-size: 13px; }
+.dim-cell { font-variant-numeric: tabular-nums; }
