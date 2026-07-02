@@ -59,7 +59,26 @@ function ProbeCard({ p, enums, onSaved }) {
           <Descriptions.Item label="怎么做到的">
             {codeAnalysis.mechanism || codeAnalysis.detail || JSON.stringify(codeAnalysis)}
           </Descriptions.Item>
-          {codeAnalysis.ref && <Descriptions.Item label="出处">{codeAnalysis.ref}</Descriptions.Item>}
+          {codeAnalysis.repo && (
+            <Descriptions.Item label="代码仓库">
+              <a href={codeAnalysis.repo} target="_blank" rel="noreferrer">{codeAnalysis.repo}</a>
+            </Descriptions.Item>
+          )}
+          {Array.isArray(codeAnalysis.refs) && codeAnalysis.refs.length > 0 && (
+            <Descriptions.Item label="证据出处">
+              <Space direction="vertical" size={2}>
+                {codeAnalysis.refs.map((rr, i) => {
+                  const isUrl = typeof rr === "string" && /^https?:\/\//.test(rr);
+                  return isUrl
+                    ? <a key={i} href={rr} target="_blank" rel="noreferrer">{rr}</a>
+                    : <code key={i} style={{ fontSize: 12 }}>{rr}</code>;
+                })}
+              </Space>
+            </Descriptions.Item>
+          )}
+          {codeAnalysis.analyst && (
+            <Descriptions.Item label="分析人">{codeAnalysis.analyst}</Descriptions.Item>
+          )}
         </Descriptions>
       )}
 
