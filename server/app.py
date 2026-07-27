@@ -419,7 +419,7 @@ class MaterializeIn(BaseModel):
 
 
 @app.post("/api/assignments/materialize")
-def materialize_assignment(body: MaterializeIn, user=Depends(current_user)):
+def materialize_assignment(body: MaterializeIn, user=rbac("manage_task_catalog")):
     """把清单里的一道题铸成可领取的 Assignment (含同域参赛产品集, ADR-0015)。
 
     维护任务清单属 owner 独占 (story 5, manage_task_catalog)。幂等: 同题复用原单。
@@ -432,7 +432,7 @@ def materialize_assignment(body: MaterializeIn, user=Depends(current_user)):
 
 
 @app.post("/api/assignments/{assignment_id}/claim")
-def claim_assignment(assignment_id: str, user=Depends(current_user)):
+def claim_assignment(assignment_id: str, user=rbac("claim_assignment")):
     """intern 领取一道 Assignment (整组对打一人一次性, ADR-0015)。
 
     并发领取: 两人抢同一道只一个成功 (store 原子锁), 落败方见 409 已锁定。
