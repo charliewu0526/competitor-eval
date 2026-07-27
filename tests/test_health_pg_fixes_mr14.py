@@ -136,5 +136,63 @@ class SQLiteMigrateByName(unittest.TestCase):
         con.close()
 
 
+# --- F-5: all_findings 解码 evidence, gap_report 能挖出开源机理 -----------
+class FindingsEvidenceDecoded(unittest.TestCase):
+    """F-5 是真实功能失效回归: all_findings 只返回 evidence_json 字符串, 而
+    gap_report._mechanism_from_findings 读 f['evidence'], 恒 None -> 开源竞品
+    源码机理永远挖不出(MR-11 差距报告第三块失灵)。修复后必须能挖出。"""
+
+    def _con(self):
+        from pipeline import findings as FIND
+        con = store.connect(str(pathlib.Path(tempfile.mkdtemp()) / "t.db"))
+        for prod, sc in (("vio", 0.4), ("open_interpreter", 0.9)):
+            store.upsert_score(con, {
+                "task_id": "T1", "product": prod, "run_idx": 1,
+                "gate": "native-operable", "scored": True, "reason": None,
+                "objective_ratio": 1.0, "sample_score": sc, "h1_honesty": None,
+                "subjective": {"S1": 4}, "disagreement_flagged": [], "defects": []})
+        f = FIND.Finding(
+            task_id="T1", rule="capability-lead", suspected_category="feature-gap",
+            subject="open_interpreter", phenomenon="lead",
+            evidence=[{"source": "code-analysis", "mechanism": "explicit plan loop",
+                       "repo": "gh/oi", "refs": ["planner.py"], "analyst": "x2"}])
+        store.upsert_finding(con, f)
+        return con
+
+    def test_all_findings_decodes_evidence_key(self):
+        con = self._con()
+        row = store.all_findings(con)[0]
+        self.assertIn("evidence", row, "all_findings 未解码出 evidence 键 (F-5 回归)")
+        self.assertIsInstance(row["evidence"], list)
+        self.assertEqual(row["evidence"][0]["source"], "code-analysis")
+
+    def test_gap_report_from_store_surfaces_mechanism(self):
+        from pipeline import gap_report as GR
+        from pipeline.registry import default_registry
+        con = self._con()
+        rep = GR.from_store(con, "T1", registry=default_registry())
+        mech = next(m for m in rep.mechanisms if m.product == "open_interpreter")
+        # 修复前这里恒 None(evidence 挖不出); 修复后应转述出机理。
+        self.assertEqual(mech.mechanism, "explicit plan loop",
+                         "gap_report 未挖出开源竞品机理 (F-5 真实功能失效回归)")
+        self.assertIn("planner.py", mech.refs)
+
+    def test_all_scores_decodes_subjective(self):
+        # F-4: all_scores 解码 subjective/defects/disagreement。
+        con = self._con()
+        row = next(s for s in store.all_scores(con) if s["product"] == "vio")
+        self.assertEqual(row.get("subjective"), {"S1": 4},
+                         "all_scores 未解码 subjective (F-4 回归)")
+
+    def test_batch_assignment_read_decodes_products(self):
+        # F-7: 批量读 assignment 与 get_assignment 一致解码 products。
+        con = store.connect(str(pathlib.Path(tempfile.mkdtemp()) / "t.db"))
+        store.upsert_assignment(con, {"id": "a1", "task_id": "T1",
+                                      "products": ["vio", "manus"], "status": "open"})
+        row = store.open_assignments(con)[0]
+        self.assertEqual(row.get("products"), ["vio", "manus"],
+                         "open_assignments 未解码 products (F-7 回归)")
+
+
 if __name__ == "__main__":
     unittest.main()

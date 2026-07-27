@@ -277,6 +277,31 @@ def _b(v):
     return None if v is None else int(bool(v))
 
 
+def _decode_json_cols(d: dict, cols: dict) -> dict:
+    """把行里的 `*_json` 字符串列解码回 Python 对象, 挂到不带 `_json` 后缀的键上。
+
+    体检 F-4/F-5/F-6/F-7: 写入侧 json.dumps 存了 `evidence_json` / `subjective_json`
+    等, 但多个读函数只 dict(row) 不解码, 调用方拿到裸字符串或 KeyError(gap_report
+    读 f['evidence'] 恒 None -> 开源机理永远挖不出, 是真实功能失效)。此 helper 让读
+    写对称。additive: 原 `*_json` 键保留(旧调用方不破), 另加解码后的键。
+
+    cols: {json_column_name: decoded_key_name}, 如 {"evidence_json": "evidence"}。
+    """
+    for json_col, key in cols.items():
+        raw = d.get(json_col)
+        if raw is None:
+            d[key] = None
+            continue
+        if isinstance(raw, (dict, list)):
+            d[key] = raw           # 已是对象(PG 某些驱动直接反序列化)-> 原样
+            continue
+        try:
+            d[key] = json.loads(raw)
+        except (ValueError, TypeError):
+            d[key] = None
+    return d
+
+
 # --- writes ---------------------------------------------------------------
 def upsert_run(con: sqlite3.Connection, rr) -> None:
     """Persist a RunRecord (the seam INPUT). Idempotent on (task,product,run)."""
@@ -405,10 +430,14 @@ def upsert_authorization(con: sqlite3.Connection, a: dict) -> None:
     con.commit()
 
 
+_AUTHZ_JSON = {"bias_profile_json": "bias_profile", "confusion_json": "confusion"}
+
+
 def get_authorization(con: sqlite3.Connection, subject: str) -> dict | None:
     row = con.execute("SELECT * FROM authorizations WHERE subject=?",
                       (subject,)).fetchone()
-    return dict(row) if row else None
+    # F-6: 解码 bias_profile/confusion JSON, 读写对称。
+    return _decode_json_cols(dict(row), _AUTHZ_JSON) if row else None
 
 
 def set_authorization_status(con: sqlite3.Connection, subject: str, status: str,
@@ -545,17 +574,17 @@ def get_assignment(con, assignment_id: str) -> dict | None:
                       (assignment_id,)).fetchone()
     if not row:
         return None
-    d = dict(row)
-    try:
-        d["products"] = json.loads(d.get("products_json") or "null")
-    except Exception:
-        d["products"] = None
-    return d
+    return _decode_assignment(dict(row))
+
+
+def _decode_assignment(d: dict) -> dict:
+    """把 products_json 解码成 products 列表(F-7: 单记录读与批量读行为一致)。"""
+    return _decode_json_cols(d, {"products_json": "products"})
 
 
 def open_assignments(con) -> list[dict]:
     """List assignments still up for grabs (未被领取)."""
-    return [dict(r) for r in con.execute(
+    return [_decode_assignment(dict(r)) for r in con.execute(
         "SELECT * FROM assignments WHERE status='open' ORDER BY created_ts, id")]
 
 
@@ -564,14 +593,14 @@ def assignments_by_status(con, status: str) -> list[dict]:
 
     Used by the state-machine policy layer to sweep `claimed` rows for timeout
     reclaim (#42 AC: 超时未交回到 open)."""
-    return [dict(r) for r in con.execute(
+    return [_decode_assignment(dict(r)) for r in con.execute(
         "SELECT * FROM assignments WHERE status=? ORDER BY created_ts, id",
         (status,))]
 
 
 def assignments_for_user(con, user_id: str) -> list[dict]:
     """Assignments currently held by user_id (claimed/submitted 尚未放弃的活)."""
-    return [dict(r) for r in con.execute(
+    return [_decode_assignment(dict(r)) for r in con.execute(
         "SELECT * FROM assignments WHERE claimed_by=? ORDER BY claimed_ts, id",
         (user_id,))]
 
@@ -839,11 +868,21 @@ def delete_session(con, token: str) -> None:
 
 # --- reads ----------------------------------------------------------------
 def all_scores(con: sqlite3.Connection) -> list[dict]:
-    return [dict(r) for r in con.execute("SELECT * FROM scores ORDER BY task_id, product")]
+    # F-4: 解码 subjective/disagreement/defects JSON, 读写对称(原 *_json 键保留)。
+    return [_decode_json_cols(dict(r), {
+                "subjective_json": "subjective",
+                "disagreement_json": "disagreement_flagged",
+                "defects_json": "defects"})
+            for r in con.execute("SELECT * FROM scores ORDER BY task_id, product")]
 
 
 def all_findings(con: sqlite3.Connection) -> list[dict]:
-    return [dict(r) for r in con.execute("SELECT * FROM findings ORDER BY id")]
+    # F-5: 解码 evidence/bug_repro JSON。gap_report 读 f['evidence'] 挖机理证据,
+    # 不解码则恒 None -> 开源竞品机理永远挖不出(真实功能失效)。
+    return [_decode_json_cols(dict(r), {
+                "evidence_json": "evidence",
+                "bug_repro_json": "bug_repro"})
+            for r in con.execute("SELECT * FROM findings ORDER BY id")]
 
 
 def cost_with_completion(con: sqlite3.Connection) -> list[dict]:
