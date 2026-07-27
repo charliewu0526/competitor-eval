@@ -49,15 +49,29 @@ app.add_middleware(
 _DB_PATH = None  # default board/competitor_eval.db
 
 
+_migrated_for = None   # 记录已完成建表+迁移的 _DB_PATH(进程内一次)
+
+
 def _con():
-    return store.connect(_DB_PATH)
+    # H-3: 建表+迁移是一次性动作。首个请求(或 _DB_PATH 变更, 如测试切临时库)迁移一次,
+    # 之后每请求 skip_migrate=True 只开连接, 免得每个请求都重跑 executescript +
+    # 11 张表 PRAGMA + SCHEMA 正则解析的风暴。不依赖 lifespan(TestClient 直连不触发)。
+    global _migrated_for
+    if _migrated_for != _DB_PATH:
+        store.connect(_DB_PATH).close()   # 完整建表+迁移
+        _migrated_for = _DB_PATH
+    return store.connect(_DB_PATH, skip_migrate=True)
 
 
 @app.get("/api/health")
 def health():
-    con = _con()
-    n = con.execute("SELECT COUNT(*) FROM scores").fetchone()[0]
-    return {"ok": True, "scores": n}
+    # M-2: DB 抖动/损坏时降级为 503(ok:False), 不裸穿透成 500 栈迹。
+    try:
+        con = _con()
+        n = con.execute("SELECT COUNT(*) FROM scores").fetchone()[0]
+        return {"ok": True, "scores": n}
+    except Exception as e:
+        raise HTTPException(503, f"数据库不可用: {e}")
 
 
 # --- glossary: machine field -> plain Chinese (人话原则) -------------------
@@ -81,7 +95,14 @@ def glossary():
 @app.get("/api/overview")
 def overview():
     """Dashboard summary numbers."""
-    con = _con()
+    try:
+        con = _con()
+        return _overview_body(con)
+    except Exception as e:                      # M-2: DB 抖动降级, 不裸穿透 500
+        raise HTTPException(503, f"数据库不可用: {e}")
+
+
+def _overview_body(con):
     n_scores = con.execute("SELECT COUNT(*) FROM scores").fetchone()[0]
     n_products = con.execute("SELECT COUNT(DISTINCT product) FROM scores").fetchone()[0]
     n_tasks = con.execute("SELECT COUNT(DISTINCT task_id) FROM scores").fetchone()[0]

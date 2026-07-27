@@ -242,7 +242,7 @@ def _migrate(con: sqlite3.Connection) -> list[str]:
 
 
 def connect(db_path: str | pathlib.Path | None = None,
-            url: str | None = None):
+            url: str | None = None, skip_migrate: bool = False):
     """Open the single-source store.
 
     Backend selection (PM 拍板: SQLite 默认、Postgres 就绪):
@@ -250,25 +250,36 @@ def connect(db_path: str | pathlib.Path | None = None,
       * 否则 -> stdlib sqlite3, 与迁移前完全一致(db_path 路径、_migrate PRAGMA 兜底
         全部原样), 现有测试作回归护栏。
     db_path 仅对 SQLite 后端有意义; PG 后端由 url 决定库。
+
+    skip_migrate (体检 H-3): 建表 + 迁移(SQLite 走 11 张表的 PRAGMA table_info +
+    SCHEMA 正则解析, PG 走 information_schema)本是「首次运行」的一次性动作。默认
+    False 保持自建表行为不变(测试/CLI/首连都安全); Web 层在 startup 迁移一次后,
+    每请求连接传 skip_migrate=True, 免得每个请求都重跑一遍建表+迁移风暴。
     """
     resolved_url = url or os.environ.get("DATABASE_URL")
     if _db.dialect_for(resolved_url) == "postgres":
         con = _db.connect_url(resolved_url)
-        con.executescript(_db.translate_ddl(SCHEMA, "postgres"))
-        # PG 的 DDL 是事务性的: pg8000 默认 autocommit=False, 不 commit 则连接关闭时
-        # 建表事务回滚 -> 表永不落地 (首个只读请求就会踩到, 见体检 H2)。故显式提交。
-        con.commit()
-        # 增量迁移(体检 F-2): CREATE TABLE IF NOT EXISTS 对已存在的 PG 表是 no-op,
-        # 故 SCHEMA 后加的列在既有库里不会自动出现。用 information_schema 探查缺列并
-        # ALTER 补齐, 对称于 SQLite 的 _migrate(那个走 PRAGMA, SQLite-only)。
-        _db.pg_migrate(con, _parse_schema_columns(SCHEMA))
+        if not skip_migrate:
+            con.executescript(_db.translate_ddl(SCHEMA, "postgres"))
+            # PG 的 DDL 是事务性的: pg8000 默认 autocommit=False, 不 commit 则连接关闭时
+            # 建表事务回滚 -> 表永不落地 (首个只读请求就会踩到, 见体检 H2)。故显式提交。
+            con.commit()
+            # 增量迁移(体检 F-2): CREATE TABLE IF NOT EXISTS 对已存在的 PG 表是 no-op,
+            # 故 SCHEMA 后加的列在既有库里不会自动出现。用 information_schema 探查缺列并
+            # ALTER 补齐, 对称于 SQLite 的 _migrate(那个走 PRAGMA, SQLite-only)。
+            _db.pg_migrate(con, _parse_schema_columns(SCHEMA))
         return con
     p = pathlib.Path(db_path) if db_path else DEFAULT_DB
     p.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(p))
     con.row_factory = sqlite3.Row
-    con.executescript(SCHEMA)   # creates missing tables
-    _migrate(con)               # back-fills missing columns on pre-existing tables
+    # L-6: WAL 让读写不互斥 + busy_timeout 让并发写自动重试, 避免多连接下
+    # 「database is locked」直接穿透成 500(每请求新连 + 默认 DELETE 日志易踩)。
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=5000")
+    if not skip_migrate:
+        con.executescript(SCHEMA)   # creates missing tables
+        _migrate(con)               # back-fills missing columns on pre-existing tables
     return con
 
 
