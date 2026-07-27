@@ -501,7 +501,9 @@ async def submit_submission(
             submitted_by=user["id"], transcript_excerpt=transcript_excerpt,
             competitor_version=competitor_version, tested_at=tested_at)
     except SUB.EvidenceMissing as e:
-        raise HTTPException(400, str(e))       # 无证据不入池
+        raise HTTPException(400, str(e))       # 无原始产物不入池
+    except SUB.LogBundleMissing as e:
+        raise HTTPException(400, str(e))       # 无日志包不入池 (#45 AC1)
     except SUB.WrongProduct as e:
         raise HTTPException(400, str(e))       # 领取粒度错单
     except SUB.NotSubmittable as e:

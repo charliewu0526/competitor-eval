@@ -27,6 +27,12 @@ def _tmp_db():
     return STORE.connect(pathlib.Path(tempfile.mkdtemp()) / "t.db")
 
 
+# MR-9 (#45) 起日志包强制。MR-7 的「预期成功」用例补一个占位日志包路径,
+# 让它们仍验证 MR-7 本职(原始产物 / 领取粒度 / 落库 / 流向 intake),不被
+# 新的强制守卫误伤。缺日志包的「拒收」语义由 MR-9 专测覆盖。
+_LOG = "/uploads/ASG/vio/log_bundle/log.json"
+
+
 def _seed_assignment(con, *, products=("vio", "simular"), status="claimed",
                      claimed_by="u-intern-1"):
     """物化一个 Assignment 直接写库到指定状态(绕过 catalog, 测提交策略本身)。"""
@@ -85,9 +91,11 @@ class SubmitPerProduct(unittest.TestCase):
 
     def test_each_product_separate_submission(self):
         SUB.submit_product(self.con, assignment_id=self.aid, product="vio",
-                           artifact_path="/u/vio.png", submitted_by="u-intern-1")
+                           artifact_path="/u/vio.png", log_bundle_path=_LOG,
+                           submitted_by="u-intern-1")
         SUB.submit_product(self.con, assignment_id=self.aid, product="simular",
-                           artifact_path="/u/sim.png", submitted_by="u-intern-1")
+                           artifact_path="/u/sim.png", log_bundle_path=_LOG,
+                           submitted_by="u-intern-1")
         prog = SUB.submission_progress(self.con, self.aid)
         self.assertEqual(sorted(prog["submitted"]), ["simular", "vio"])
         self.assertEqual(prog["missing"], [])
@@ -95,7 +103,8 @@ class SubmitPerProduct(unittest.TestCase):
 
     def test_progress_reports_missing(self):
         SUB.submit_product(self.con, assignment_id=self.aid, product="vio",
-                           artifact_path="/u/vio.png", submitted_by="u-intern-1")
+                           artifact_path="/u/vio.png", log_bundle_path=_LOG,
+                           submitted_by="u-intern-1")
         prog = SUB.submission_progress(self.con, self.aid)
         self.assertEqual(prog["submitted"], ["vio"])
         self.assertEqual(prog["missing"], ["simular"])
@@ -103,9 +112,11 @@ class SubmitPerProduct(unittest.TestCase):
 
     def test_resubmit_same_product_overwrites(self):
         SUB.submit_product(self.con, assignment_id=self.aid, product="vio",
-                           artifact_path="/u/old.png", submitted_by="u-intern-1")
+                           artifact_path="/u/old.png", log_bundle_path=_LOG,
+                           submitted_by="u-intern-1")
         SUB.submit_product(self.con, assignment_id=self.aid, product="vio",
-                           artifact_path="/u/new.png", submitted_by="u-intern-1")
+                           artifact_path="/u/new.png", log_bundle_path=_LOG,
+                           submitted_by="u-intern-1")
         rows = STORE.submissions_for(self.con, self.aid)
         self.assertEqual(len(rows), 1)                 # UNIQUE(assignment,product)
         self.assertEqual(rows[0]["artifact_path"], "/u/new.png")
@@ -137,13 +148,14 @@ class MissingEvidenceRejected(unittest.TestCase):
             pass
         self.assertEqual(STORE.submissions_for(self.con, self.aid), [])
 
-    def test_missing_log_bundle_allowed(self):
-        # #43 只强制原始产物; 日志包缺失如实透传(下一切片 #44 才强制)。
-        row = SUB.submit_product(
-            self.con, assignment_id=self.aid, product="vio",
-            artifact_path="/u/vio.png", log_bundle_path=None,
-            submitted_by="u-intern-1")
-        self.assertIsNone(row["log_bundle_path"])
+    def test_missing_log_bundle_rejected(self):
+        # MR-9 (#45) 起日志包强制: 缺执行日志包 -> LogBundleMissing(无日志包不入池)。
+        # (原 MR-7 的「缺日志包放行」占位语义已被 #45 演进——它当年就注明「下一切片强制」。)
+        with self.assertRaises(SUB.LogBundleMissing):
+            SUB.submit_product(
+                self.con, assignment_id=self.aid, product="vio",
+                artifact_path="/u/vio.png", log_bundle_path=None,
+                submitted_by="u-intern-1")
 
 
 # =============================================================================
@@ -190,7 +202,7 @@ class FlowsToIntakeSeam(unittest.TestCase):
     def test_submission_translates_to_runrecord(self):
         SUB.submit_product(
             self.con, assignment_id=self.aid, product="vio",
-            artifact_path="/u/vio.png",
+            artifact_path="/u/vio.png", log_bundle_path=_LOG,
             manual_assertions={"msg_received": True, "text_exact": True,
                                "no_collateral": True},
             claimed_success=True, submitted_by="u-intern-1",
@@ -208,11 +220,14 @@ class FlowsToIntakeSeam(unittest.TestCase):
         self.assertEqual(rr.competitor_version, "v1")
         self.assertEqual(rr.tested_at, 1_800_000_000.0)
 
-    def test_missing_log_bundle_yields_unavailable_not_fake_zero(self):
-        # 无日志包 -> intake 标 cost/evidence unavailable(诚实, 不伪造 0-cost 成功)
+    def test_unreadable_log_bundle_yields_unavailable_not_fake_zero(self):
+        # MR-9 起日志「文件」强制上传(交了包),但包内字段拿不到(黑箱竞品/坏包)
+        # -> intake 标 cost/evidence unavailable(诚实, 不伪造 0-cost 成功)。
+        # 这里交一个指向不存在文件的路径: 文件强制过关(有路径), 解析拿不到 -> unavailable。
         SUB.submit_product(
             self.con, assignment_id=self.aid, product="vio",
             artifact_path="/u/vio.png",
+            log_bundle_path="/nope/does-not-exist.json",
             manual_assertions={"msg_received": True, "text_exact": True,
                                "no_collateral": True},
             submitted_by="u-intern-1")

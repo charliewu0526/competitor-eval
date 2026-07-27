@@ -40,6 +40,18 @@ class EvidenceMissing(SubmissionError):
     """缺原始产物(无可核查实体)—— 无证据不入池 (#43 AC3, story 17)。"""
 
 
+class LogBundleMissing(SubmissionError):
+    """缺执行日志包 —— 无日志包不入池 (#45 AC1, story 16/17)。
+
+    MR-9 起日志包从「可选」升为「强制」:成本与过程必须有真实来源,不靠事后自报。
+    注意区分两个层级(呼应 PRD「缺数据如实标 unavailable」):
+      * 日志包「文件」强制上传 —— 压根没交包 => 拒收(本异常)。
+      * 包内某些字段(闭源竞品的 token 等)拿不到 => 如实标 unavailable,不拒收
+        (那由 intake 解析时透传,不伪造 0)。
+    即「你必须交一个包,但包里黑箱字段可以诚实标缺失」—— 两者不矛盾。
+    """
+
+
 class WrongProduct(SubmissionError):
     """给不在该 Assignment 参赛产品集里的产品提交 —— 领取粒度错单 (ADR-0015)。"""
 
@@ -52,6 +64,12 @@ def _has_artifact(artifact_path) -> bool:
     """原始产物是否算「有」: 非空、去空白后非空串。存在性由上传层已落盘保证,
     这里只拦「压根没给」的空提交(防止空壳入池)。"""
     return bool(artifact_path and str(artifact_path).strip())
+
+
+def _has_log_bundle(log_bundle_path) -> bool:
+    """日志包是否算「有」: 同 _has_artifact —— 只拦「压根没交包」的空提交。
+    包「文件」必须在(#45 AC1 强制);包「内字段」拿不到照 unavailable 透传,不在此拦。"""
+    return bool(log_bundle_path and str(log_bundle_path).strip())
 
 
 def submit_product(con, *, assignment_id: str, product: str,
@@ -72,8 +90,10 @@ def submit_product(con, *, assignment_id: str, product: str,
       1. Assignment 存在 & 可提交(claimed + 本人持有)—— 否则 NotSubmittable。
       2. product 在该 Assignment 参赛产品集内 —— 否则 WrongProduct(领取粒度)。
       3. 有原始产物 —— 否则 EvidenceMissing(无证据不入池,#43 AC3)。
-    三关全过才落库(store.upsert_submission,幂等 on (assignment_id, product):
-    同产品重交覆盖旧的)。日志包缺失不拦(下一切片 #44 强制),如实透传。
+      4. 有执行日志包 —— 否则 LogBundleMissing(无日志包不入池,#45 AC1)。
+    四关全过才落库(store.upsert_submission,幂等 on (assignment_id, product):
+    同产品重交覆盖旧的)。注意日志「文件」强制,但包内字段拿不到照 unavailable
+    透传给 intake(不伪造 0)—— 两个层级不矛盾。
 
     返回落库后的 submission 行(dict,manual_assertions 已解析)。
     """
@@ -99,6 +119,11 @@ def submit_product(con, *, assignment_id: str, product: str,
         raise EvidenceMissing(
             f"缺原始产物(截图/导出文件/AI 对话记录): {assignment_id!r}/{product!r} "
             f"—— 无证据不入池,提交被拒")
+
+    if not _has_log_bundle(log_bundle_path):
+        raise LogBundleMissing(
+            f"缺执行日志包(时间线/token/调用次数): {assignment_id!r}/{product!r} "
+            f"—— 成本与过程须有真实来源,无日志包不入池 (#45 AC1),提交被拒")
 
     sid = submission_id or f"sub-{assignment_id}-{product}-{uuid.uuid4().hex[:8]}"
     store.upsert_submission(con, {

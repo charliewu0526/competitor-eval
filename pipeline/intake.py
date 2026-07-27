@@ -37,6 +37,7 @@ from pipeline.schema import RunRecord, COST_SOURCE_VALUES, EVIDENCE_SOURCE_VALUE
 from pipeline import objective as O
 from pipeline.gate import gate_for
 from pipeline.cost_client import CostAccountant
+from pipeline.logview import derive_views, LogViews
 
 
 class AssertionScopeError(ValueError):
@@ -247,6 +248,34 @@ class SubmissionTranslator:
             evidence_source=log_facts["evidence_source"],
             claimed_success=submission.claimed_success,
             competitor_version=version, tested_at=tested_at)
+
+
+def log_views(submission: Submission, *, log_parser=None, registry=None,
+              price_table=None) -> LogViews:
+    """从一份 Submission 的日志包派生 raw / redacted 双视图 (#45 AC3/AC4, ADR-0013).
+
+    raw = 完整解析事实(cost/token/model/timeline)—— 成本统计 + 人工抽查。
+    redacted = 洗掉品牌 / 模型指纹 —— 喂盲评面板(盲评不被日志泄底)。
+
+    脱敏词典 DERIVED:品牌来自 registry(缺省用生产 FileRegistry),模型来自
+    price_table(缺省用 A3 生产价表)+ 本包实际用的 model 名。这样加竞品 / 加模型
+    = 改数据不改脱敏代码。两视图共享同一套成本事实数值,只在身份指纹上分叉。
+    """
+    parser = log_parser or LogBundleParser()
+    facts = parser.parse(submission.log_bundle_path)
+    if registry is None:
+        try:
+            from pipeline.registry import default_registry
+            registry = default_registry()
+        except Exception:
+            registry = None
+    if price_table is None:
+        try:
+            from pipeline.cost_client import PriceTable
+            price_table = PriceTable.load()
+        except Exception:
+            price_table = None
+    return derive_views(facts, registry=registry, price_table=price_table)
 
 
 # --- module-level convenience matching the AC signature ----------------------
