@@ -229,7 +229,7 @@ def _migrate(con: sqlite3.Connection) -> list[str]:
     """
     added: list[str] = []
     for table, cols in _parse_schema_columns(SCHEMA).items():
-        have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
         if not have:
             continue  # table doesn't exist yet -> executescript(SCHEMA) created it
         for col, ddl in cols:
@@ -258,7 +258,10 @@ def connect(db_path: str | pathlib.Path | None = None,
         # PG 的 DDL 是事务性的: pg8000 默认 autocommit=False, 不 commit 则连接关闭时
         # 建表事务回滚 -> 表永不落地 (首个只读请求就会踩到, 见体检 H2)。故显式提交。
         con.commit()
-        # PG 建表即完整, 无需 SQLite 的 ALTER 回填(_migrate 走 PRAGMA, SQLite-only)。
+        # 增量迁移(体检 F-2): CREATE TABLE IF NOT EXISTS 对已存在的 PG 表是 no-op,
+        # 故 SCHEMA 后加的列在既有库里不会自动出现。用 information_schema 探查缺列并
+        # ALTER 补齐, 对称于 SQLite 的 _migrate(那个走 PRAGMA, SQLite-only)。
+        _db.pg_migrate(con, _parse_schema_columns(SCHEMA))
         return con
     p = pathlib.Path(db_path) if db_path else DEFAULT_DB
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -782,7 +785,7 @@ def consume_invite(con, token: str, user_id: str, now: float | None = None) -> b
                           (token,)).fetchone()
         if not row or row["used_by"] is not None or \
            (row["expires_ts"] is not None and ts > row["expires_ts"]):
-            con.commit()
+            con.rollback()   # 消费失败=什么都没做, 回滚行锁 (与 claim_assignment 一致, 体检 F-9)
             return False
         con.execute("UPDATE invites SET used_by=?, used_ts=? WHERE token=?",
                     (user_id, ts, token))

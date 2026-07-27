@@ -78,6 +78,37 @@ def is_postgres(con) -> bool:
     return getattr(con, "_ce_dialect", "sqlite") == "postgres"
 
 
+def pg_migrate(con, schema_columns: dict) -> list[str]:
+    """PG 版增量迁移: 把 SCHEMA 里已存在表缺失的列 ALTER 补进去(体检 F-2)。
+
+    对称于 store._migrate 的 SQLite 版, 但用 information_schema.columns 探查现有列
+    (PG 无 PRAGMA table_info)。CREATE TABLE IF NOT EXISTS 对已存在的表是 no-op,
+    故历史上给 SCHEMA 追加的列(stale / competitor_version / tested_at 等)在既有 PG
+    库里永不落地 —— 首个 INSERT 就报 column does not exist。此函数补齐这条路径。
+
+    schema_columns: {table: [(col_name, full_col_ddl), ...]}(store._parse_schema_columns
+    的产物)。additive only, 永不 drop/retype; 新列带 SCHEMA 默认值, 向后兼容读不受影响。
+    返回新增的 "table.col" 列表。
+    """
+    added: list[str] = []
+    for table, cols in schema_columns.items():
+        rows = con.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name=?", (table,)).fetchall()
+        have = {r["column_name"] for r in rows}
+        if not have:
+            continue  # 表还不存在 -> executescript(SCHEMA) 已建全, 无需回填
+        for col, ddl in cols:
+            if col not in have:
+                # SQLite DDL 片段翻成 PG 方言后再 ALTER(REAL->DOUBLE PRECISION 等)。
+                pg_ddl = translate_ddl(ddl, "postgres")
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {pg_ddl}")
+                added.append(f"{table}.{col}")
+    if added:
+        con.commit()
+    return added
+
+
 # --- Postgres 连接(可选依赖 pg8000, 未装/未配 URL 时不导入)---------------
 def connect_url(url: str):
     """用 pg8000 连 Postgres, 返回一个 sqlite3-like 包装。
@@ -171,6 +202,12 @@ class _PGConn:
 
     def commit(self):
         self._raw.commit()
+
+    def rollback(self):
+        # 失败路径释放行锁(FOR UPDATE)必需。store.claim_assignment / consume_invite
+        # 的 PG 分支落败时调 con.rollback() 回滚空事务; 缺此方法则并发落败方崩
+        # AttributeError(体检 F-1)。commit/rollback 均可释放锁, 失败路径统一 rollback。
+        self._raw.rollback()
 
     def close(self):
         self._raw.close()
