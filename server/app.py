@@ -259,6 +259,22 @@ def current_user(authorization: str | None = Header(default=None)):
     return AUTH.whoami(_con(), token)
 
 
+def rbac(action: str):
+    """RBAC dependency factory (体检 M-1): 消除 22 处重复的 try/RBAC.require/except.
+
+    用法把端点签名的 `user=Depends(current_user)` 换成 `user=rbac("<action>")` —— 鉴权
+    通过则注入 user dict, 不通过统一翻 403。好处: (1) 忘记加鉴权在签名上就看得出;
+    (2) 权限动作作为依赖声明的一部分, 端点体只剩业务逻辑。路由 URL / HTTP 方法 /
+    响应体一字不变, test_server_smoke 的路由契约不受影响。
+    """
+    def _guard(user=Depends(current_user)) -> dict:
+        try:
+            return RBAC.require(user, action)
+        except RBAC.PermissionDenied as e:
+            raise HTTPException(403, str(e))
+    return Depends(_guard)
+
+
 class InviteIn(BaseModel):
     note: str | None = None
     ttl_seconds: float | None = None
@@ -266,12 +282,8 @@ class InviteIn(BaseModel):
 
 
 @app.post("/api/invites")
-def issue_invite(body: InviteIn, user=Depends(current_user)):
+def issue_invite(body: InviteIn, user=rbac("issue_invite")):
     """PM 签发私发注册链接。仅 owner 可签发 (story 2: 不对公网开放)。"""
-    try:
-        RBAC.require(user, "issue_invite")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
     inv = AUTH.issue_invite(_con(), created_by=user["id"],
                             note=body.note, ttl_seconds=body.ttl_seconds)
     return {"token": inv["token"], "note": inv.get("note"),
@@ -332,12 +344,8 @@ def logout(authorization: str | None = Header(default=None)):
 
 # === MR-4 (#40) RBAC: 角色提升 + 权限边界 ==============================
 @app.get("/api/users")
-def list_users(user=Depends(current_user)):
+def list_users(user=rbac("promote_user")):
     """列出所有用户与角色 (PM 管理角色用)。owner 独占 (提升属校准类危险权限)。"""
-    try:
-        RBAC.require(user, "promote_user")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
     return [{"id": u["id"], "name": u.get("name"), "role": u["role"]}
             for u in store.all_users(_con())]
 
@@ -378,12 +386,8 @@ def _assignment_view(a: dict) -> dict:
 
 
 @app.get("/api/assignments")
-def list_open_assignments(user=Depends(current_user)):
+def list_open_assignments(user=rbac("claim_assignment")):
     """列出可领取 (open) 的 Assignment。任意已登录用户可看 (intern 起)。"""
-    try:
-        RBAC.require(user, "claim_assignment")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
     con = _con()
     return [_assignment_view(store.get_assignment(con, a["id"]))
             for a in store.open_assignments(con)]
@@ -400,10 +404,6 @@ def materialize_assignment(body: MaterializeIn, user=Depends(current_user)):
     维护任务清单属 owner 独占 (story 5, manage_task_catalog)。幂等: 同题复用原单。
     """
     try:
-        RBAC.require(user, "manage_task_catalog")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
-    try:
         a = ASSIGN.materialize_for_task(_con(), body.task_id)
     except ASSIGN.AssignmentError as e:
         raise HTTPException(400, str(e))
@@ -416,10 +416,6 @@ def claim_assignment(assignment_id: str, user=Depends(current_user)):
 
     并发领取: 两人抢同一道只一个成功 (store 原子锁), 落败方见 409 已锁定。
     """
-    try:
-        RBAC.require(user, "claim_assignment")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
     con = _con()
     try:
         a = ASSIGN.claim(con, assignment_id, user["id"])
@@ -431,12 +427,8 @@ def claim_assignment(assignment_id: str, user=Depends(current_user)):
 
 
 @app.post("/api/assignments/{assignment_id}/abandon")
-def abandon_assignment(assignment_id: str, user=Depends(current_user)):
+def abandon_assignment(assignment_id: str, user=rbac("claim_assignment")):
     """放弃已领取的 Assignment -> 回到清单可被再领 (story 12)。仅持有者可放弃。"""
-    try:
-        RBAC.require(user, "claim_assignment")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
     con = _con()
     try:
         a = ASSIGN.abandon(con, assignment_id, by=user["id"])
@@ -450,12 +442,8 @@ def abandon_assignment(assignment_id: str, user=Depends(current_user)):
 
 
 @app.post("/api/assignments/{assignment_id}/submit")
-def submit_assignment(assignment_id: str, user=Depends(current_user)):
+def submit_assignment(assignment_id: str, user=rbac("submit")):
     """把已领取的 Assignment 标记 submitted (claimed -> submitted)。仅持有者可交。"""
-    try:
-        RBAC.require(user, "submit")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
     con = _con()
     try:
         a = ASSIGN.submit(con, assignment_id, by=user["id"])
@@ -468,27 +456,19 @@ def submit_assignment(assignment_id: str, user=Depends(current_user)):
 
 
 @app.post("/api/assignments/reclaim-stale")
-def reclaim_stale_assignments(user=Depends(current_user)):
+def reclaim_stale_assignments(user=rbac("manage_task_catalog")):
     """扫描领了太久没交的 Assignment 扫回 open (超时回收, story 12)。owner 触发。"""
-    try:
-        RBAC.require(user, "manage_task_catalog")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
     reclaimed = ASSIGN.reclaim_stale(_con())
     return {"reclaimed": reclaimed, "count": len(reclaimed)}
 
 
 # === MR-7 (#43) 提交表单 + 原始产物上传 + 缺证据拒收 =====================
 @app.get("/api/assignments/{assignment_id}/submissions")
-def list_submissions(assignment_id: str, user=Depends(current_user)):
+def list_submissions(assignment_id: str, user=rbac("submit")):
     """一道 Assignment 的提交进度: 参赛集里哪些产品已交、哪些还缺 (整组对打看板)。
 
     任意已登录用户(intern 起)可看自己领的活的进度。
     """
-    try:
-        RBAC.require(user, "submit")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
     try:
         return SUB.submission_progress(_con(), assignment_id)
     except SUB.SubmissionError as e:
@@ -604,11 +584,7 @@ def set_judgment(finding_id: int, body: JudgmentIn, user=Depends(current_user)):
 
 
 @app.post("/api/spotcheck/rebuild")
-def rebuild_spotcheck(user=Depends(current_user)):
-    try:
-        RBAC.require(user, "manage_task_catalog")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
+def rebuild_spotcheck(user=rbac("manage_task_catalog")):
     return SP.build_queue(_con())
 
 
@@ -618,11 +594,7 @@ class VerdictIn(BaseModel):
 
 
 @app.post("/api/spotcheck/{queue_id}/verdict")
-def submit_verdict(queue_id: int, body: VerdictIn, user=Depends(current_user)):
-    try:
-        RBAC.require(user, "review")
-    except RBAC.PermissionDenied as e:
-        raise HTTPException(403, str(e))
+def submit_verdict(queue_id: int, body: VerdictIn, user=rbac("review")):
     # checked_by 绑定认证身份, 不从请求体取 (此前客户端可伪造 "PM" 签字 — 已修)。
     kwargs = dict(status=body.status, checked_by=user["id"],
                   verdict_note=body.verdict_note)
