@@ -37,12 +37,14 @@ class ScoreDiff:
     is_baseline: bool
     sample_score: float | None
     baseline_score: float | None
-    diff: float | None            # competitor - baseline; 正=竞品领先, None=不可比
+    diff: float | None            # competitor - baseline; 正=竞品领先, 负=竞品落后, None=不可比
     gate: str | None
     scored: bool
     reason: str | None
     cannot_reach: bool
-    big_gap: bool                 # 竞品领先且 diff>=BIG_GAP(feature-gap 的算术信号)
+    big_gap: bool                 # 竞品显著领先(diff>=+BIG_GAP): 该补齐的功能差距信号
+    big_lag: bool                 # 竞品显著落后(diff<=-BIG_GAP): 基线领先的对称面,别漏看
+    honesty: int | None           # H1 诚实度(1-5),独立轴带出: 0分是老实翻车还是谎报翻车
     competitor_version: str | None
     tested_at: float | None
     stale: bool
@@ -137,14 +139,21 @@ def build_score_diffs(task_scores: list[dict], baseline: str = BASELINE) -> list
         diff = None
         if not is_base and val is not None and base_val is not None:
             diff = round(val - base_val, 4)
+        # big_gap = 竞品显著领先(该补齐); big_lag = 竞品显著落后(基线领先的对称面)。
+        # 两者都以 BIG_GAP 为门槛,方向相反 —— 一个满分碾压竞品的差距也必被标记,
+        # PM 不会漏看最刺眼的那一行。基线行 diff=None,两标志都 False。
         big = diff is not None and diff >= BIG_GAP
+        lag = diff is not None and diff <= -BIG_GAP
         diffs.append(ScoreDiff(
             product=prod, is_baseline=is_base,
             sample_score=val,
             baseline_score=None if is_base else base_val,
             diff=diff, gate=sc.get("gate"),
             scored=bool(sc.get("scored", True)), reason=sc.get("reason"),
-            cannot_reach=cr, big_gap=big,
+            cannot_reach=cr, big_gap=big, big_lag=lag,
+            # H1 诚实度独立轴原样带出(不折进能力分): 让 PM 一眼看清 0 分是老实翻车
+            # (H1=4)还是谎报翻车(H1=1)—— 危险的强 vs 可信的弱的关键区分。
+            honesty=sc.get("h1_honesty"),
             competitor_version=sc.get("competitor_version"),
             tested_at=sc.get("tested_at"),
             stale=bool(sc.get("stale", False))))

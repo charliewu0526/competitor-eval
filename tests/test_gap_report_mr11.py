@@ -28,6 +28,60 @@ def _score(product, task_id="T1", sample=0.5, gate="native-operable",
     return d
 
 
+class BigLagAndHonesty(unittest.TestCase):
+    """真跑暴露的两个呈现缺陷的回归守卫 (e2e_real_run):
+    A: 竞品满分碾压式落后必须被标记(big_lag 对称面);
+    B: H1 诚实度独立轴带进分数差行(0分=老实翻车 vs 谎报翻车)。"""
+
+    def test_big_lag_flags_competitor_far_behind(self):
+        # 竞品客观翻车(sample=0.0)、基线满分 -> diff=-1.0,big_lag=True(别漏看).
+        scores = [_score("vio", sample=1.0),
+                  _score("oi", sample=0.0, reason="objective primary-goal failed")]
+        rep = GR.build_report("T1", scores, [])
+        oi = next(d for d in rep.score_diffs if d.product == "oi")
+        self.assertAlmostEqual(oi.diff, -1.0)
+        self.assertTrue(oi.big_lag)       # 竞品显著落后被标记
+        self.assertFalse(oi.big_gap)      # 不是竞品领先
+
+    def test_small_lag_not_flagged(self):
+        scores = [_score("vio", sample=0.5), _score("a", sample=0.45)]
+        rep = GR.build_report("T1", scores, [])
+        a = next(d for d in rep.score_diffs if d.product == "a")
+        self.assertAlmostEqual(a.diff, -0.05)
+        self.assertFalse(a.big_lag)
+        self.assertFalse(a.big_gap)
+
+    def test_lead_and_lag_are_mutually_exclusive(self):
+        scores = [_score("vio", sample=0.4),
+                  _score("ahead", sample=0.9),
+                  _score("behind", sample=0.1)]
+        rep = GR.build_report("T1", scores, [])
+        ahead = next(d for d in rep.score_diffs if d.product == "ahead")
+        behind = next(d for d in rep.score_diffs if d.product == "behind")
+        self.assertTrue(ahead.big_gap and not ahead.big_lag)
+        self.assertTrue(behind.big_lag and not behind.big_gap)
+
+    def test_honesty_axis_carried_into_diff(self):
+        # H1 独立轴带出: 谎报翻车(H1=1) vs 老实翻车(H1=4) 在分数差行就能区分.
+        scores = [_score("vio", sample=1.0, h1=5),
+                  _score("liar", sample=0.0, h1=1,
+                         reason="objective primary-goal failed"),
+                  _score("honest", sample=0.0, h1=4,
+                         reason="objective primary-goal failed")]
+        rep = GR.build_report("T1", scores, [])
+        self.assertEqual(
+            next(d for d in rep.score_diffs if d.product == "vio").honesty, 5)
+        self.assertEqual(
+            next(d for d in rep.score_diffs if d.product == "liar").honesty, 1)
+        self.assertEqual(
+            next(d for d in rep.score_diffs if d.product == "honest").honesty, 4)
+
+    def test_honesty_none_when_no_claim(self):
+        scores = [_score("vio", sample=0.5, h1=None)]
+        rep = GR.build_report("T1", scores, [])
+        self.assertIsNone(rep.score_diffs[0].honesty)
+
+
 class ScoreDiffs(unittest.TestCase):
     def test_baseline_vs_competitor_diff(self):
         # AC2: 分数差 = 竞品 - 基线(算术).
