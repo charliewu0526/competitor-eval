@@ -16,7 +16,7 @@ export default function Matrix() {
   const [err, setErr] = useState(null);
 
   useEffect(() => {
-    getLeaderboard("vio").then(setLb).catch((e) => setErr(String(e)));
+    getLeaderboard("vio").then(setLb).catch((e) => setErr(e.userMessage || String(e)));
   }, []);
 
   if (err) return <Alert type="error" message="后端没连上" description={err} showIcon />;

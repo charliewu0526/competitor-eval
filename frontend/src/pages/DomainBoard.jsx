@@ -131,7 +131,7 @@ export default function DomainBoard() {
   const [err, setErr] = useState(null);
 
   useEffect(() => {
-    getDomainBoard("vio").then(setData).catch((e) => setErr(String(e)));
+    getDomainBoard("vio").then(setData).catch((e) => setErr(e.userMessage || String(e)));
   }, []);
 
   if (err) return <Alert type="error" message="后端没连上" description={err} showIcon />;

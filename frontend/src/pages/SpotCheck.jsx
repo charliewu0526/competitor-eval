@@ -29,7 +29,7 @@ function ItemCard({ it, onDone }) {
       await postVerdict(it.id, { status, checked_by: "PM", verdict_note: note || null });
       message.success(status === "ok" ? "已记「一致」" : "已记「异常」,将触发重新校准");
       onDone && onDone();
-    } catch (e) { message.error("提交失败:" + e); }
+    } catch (e) { message.error(e.userMessage || "提交失败:" + String(e)); }
     finally { setBusy(false); }
   };
 
@@ -60,7 +60,7 @@ export default function SpotCheck() {
   const [err, setErr] = useState(null);
   const [rebuilding, setRebuilding] = useState(false);
 
-  const load = () => getSpotcheck("pending").then(setRows).catch((e) => setErr(String(e)));
+  const load = () => getSpotcheck("pending").then(setRows).catch((e) => setErr(e.userMessage || String(e)));
   useEffect(() => { load(); }, []);
 
   const rebuild = async () => {
@@ -69,7 +69,7 @@ export default function SpotCheck() {
       const r = await rebuildSpotcheck();
       message.success(`已重建队列,共 ${r.enqueued ?? "?"} 项`);
       load();
-    } catch (e) { message.error("重建失败:" + e); }
+    } catch (e) { message.error(e.userMessage || "重建失败:" + String(e)); }
     finally { setRebuilding(false); }
   };
 

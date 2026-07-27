@@ -85,7 +85,7 @@ function FindingCard({ f, enums, onSaved }) {
       message.success("判断已写回数据库");
       onSaved && onSaved();
     } catch (e) {
-      message.error("保存失败:" + String(e));
+      message.error(e.userMessage || "保存失败:" + String(e));
     } finally {
       setSaving(false);
     }
@@ -209,7 +209,7 @@ export default function Findings() {
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("all"); // all | undecided | decided
 
-  const load = () => getFindings().then(setRows).catch((e) => setErr(String(e)));
+  const load = () => getFindings().then(setRows).catch((e) => setErr(e.userMessage || String(e)));
   useEffect(() => {
     load();
     getEnums().then(setEnums).catch(() => {});

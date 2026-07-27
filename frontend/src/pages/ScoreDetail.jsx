@@ -27,14 +27,14 @@ export default function ScoreDetail() {
     getScores().then((rows) => {
       setList(rows);
       if (rows.length) setSel(`${rows[0].task_id}||${rows[0].product}`);
-    }).catch((e) => setErr(String(e)));
+    }).catch((e) => setErr(e.userMessage || String(e)));
   }, []);
 
   useEffect(() => {
     if (!sel) return;
     const [task, product] = sel.split("||");
     setDetail(null);
-    getScore(task, product).then(setDetail).catch((e) => setErr(String(e)));
+    getScore(task, product).then(setDetail).catch((e) => setErr(e.userMessage || String(e)));
   }, [sel]);
 
   const radarData = useMemo(() => {

@@ -141,7 +141,7 @@ export default function GapReport() {
         setTaskList(d.tasks || []);
         if (d.tasks && d.tasks.length > 0) setTaskId(d.tasks[0].task_id);
       })
-      .catch((e) => setErr(String(e)));
+      .catch((e) => setErr(e.userMessage || String(e)));
   }, []);
 
   useEffect(() => {
@@ -149,7 +149,7 @@ export default function GapReport() {
     setLoadingRep(true);
     getGapReport(taskId)
       .then(setReport)
-      .catch((e) => setErr(String(e)))
+      .catch((e) => setErr(e.userMessage || String(e)))
       .finally(() => setLoadingRep(false));
   }, [taskId]);
 

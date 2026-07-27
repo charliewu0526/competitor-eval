@@ -16,7 +16,7 @@ export default function Dashboard() {
   useEffect(() => {
     Promise.all([getOverview(), getLeaderboard("vio")])
       .then(([o, l]) => { setOv(o); setLb(l); })
-      .catch((e) => setErr(String(e)));
+      .catch((e) => setErr(e.userMessage || String(e)));
   }, []);
 
   if (err) return <Alert type="error" message="后端没连上" description={err} showIcon />;

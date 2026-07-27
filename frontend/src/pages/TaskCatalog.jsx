@@ -79,7 +79,7 @@ export default function TaskCatalog() {
   const [domain, setDomain] = useState("全部");
 
   useEffect(() => {
-    getCatalog().then(setGroups).catch((e) => setErr(String(e)));
+    getCatalog().then(setGroups).catch((e) => setErr(e.userMessage || String(e)));
   }, []);
 
   const options = useMemo(() => {

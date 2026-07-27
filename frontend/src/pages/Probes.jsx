@@ -20,7 +20,7 @@ function ProbeCard({ p, enums, onSaved }) {
       await postJudgment(p.id, { product_judgment: pj || null, final_category: fc || null });
       message.success("已写回数据库");
       onSaved && onSaved();
-    } catch (e) { message.error("保存失败:" + e); }
+    } catch (e) { message.error(e.userMessage || "保存失败:" + String(e)); }
     finally { setSaving(false); }
   };
 
@@ -109,7 +109,7 @@ export default function Probes() {
   const [enums, setEnums] = useState({});
   const [err, setErr] = useState(null);
 
-  const load = () => getProbes().then(setRows).catch((e) => setErr(String(e)));
+  const load = () => getProbes().then(setRows).catch((e) => setErr(e.userMessage || String(e)));
   useEffect(() => { load(); getEnums().then(setEnums).catch(() => {}); }, []);
 
   if (err) return <Alert type="error" message="后端没连上" description={err} showIcon />;

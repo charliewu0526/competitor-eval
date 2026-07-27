@@ -28,7 +28,7 @@ export default function Cost() {
   const [err, setErr] = useState(null);
 
   useEffect(() => {
-    getCost().then(setRows).catch((e) => setErr(String(e)));
+    getCost().then(setRows).catch((e) => setErr(e.userMessage || String(e)));
   }, []);
 
   if (err) return <Alert type="error" message="后端没连上" description={err} showIcon />;
