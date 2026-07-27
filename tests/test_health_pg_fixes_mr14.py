@@ -194,5 +194,29 @@ class FindingsEvidenceDecoded(unittest.TestCase):
                          "open_assignments 未解码 products (F-7 回归)")
 
 
+# --- H-2 / F-10: 写函数命中 0 行不能静默成功 -----------------------------
+class SilentWriteGuards(unittest.TestCase):
+    def test_set_judgment_returns_false_on_missing_finding(self):
+        # H-2: finding_id 不存在 -> UPDATE 命中 0 行 -> 返回 False, 调用方翻 404。
+        con = store.connect(str(pathlib.Path(tempfile.mkdtemp()) / "t.db"))
+        hit = store.set_judgment(con, 99999, product_judgment="必须补齐")
+        self.assertFalse(hit, "set_judgment 对不存在的 finding 应返回 False (H-2)")
+
+    def test_set_judgment_returns_true_on_hit(self):
+        from pipeline import findings as FIND
+        con = store.connect(str(pathlib.Path(tempfile.mkdtemp()) / "t.db"))
+        fid = store.upsert_finding(con, FIND.Finding(
+            task_id="T1", rule="r", suspected_category="feature-gap",
+            subject="manus", phenomenon="p", evidence=[{"source": "x"}]))
+        self.assertTrue(store.set_judgment(con, fid, product_judgment="必须补齐"))
+
+    def test_upsert_method_update_missing_id_raises(self):
+        # F-10: 带 id 但 id 不存在 -> UPDATE 0 行 -> raise, 不静默返回成功。
+        con = store.connect(str(pathlib.Path(tempfile.mkdtemp()) / "t.db"))
+        with self.assertRaises(KeyError):
+            store.upsert_method(con, {"id": 4242, "task_id": "T1",
+                                      "product": "manus", "draft": "x"})
+
+
 if __name__ == "__main__":
     unittest.main()

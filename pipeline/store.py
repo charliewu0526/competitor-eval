@@ -391,13 +391,18 @@ def upsert_finding(con: sqlite3.Connection, f) -> int:
 
 def set_judgment(con: sqlite3.Connection, finding_id: int,
                  product_judgment: str | None = None,
-                 final_category: str | None = None) -> None:
+                 final_category: str | None = None) -> bool:
     """PM writes back 产品判断 / 最终分类 from the board. This is the ONE place
-    human judgment enters the DB — machine classify() never touches these."""
-    con.execute("""UPDATE findings SET product_judgment=COALESCE(?, product_judgment),
-                   final_category=COALESCE(?, final_category) WHERE id=?""",
-                (product_judgment, final_category, finding_id))
+    human judgment enters the DB — machine classify() never touches these.
+
+    返回是否命中 (rowcount>0)。finding_id 不存在时 UPDATE 命中 0 行, 返回 False ——
+    调用方据此翻 404, 而非静默 200 让 PM 以为写入成功 (体检 H-2: 静默数据丢失)。"""
+    cur = con.execute(
+        """UPDATE findings SET product_judgment=COALESCE(?, product_judgment),
+           final_category=COALESCE(?, final_category) WHERE id=?""",
+        (product_judgment, final_category, finding_id))
     con.commit()
+    return cur.rowcount > 0
 
 
 # --- G2: authorization records -------------------------------------------
@@ -735,11 +740,14 @@ def upsert_method(con, m: dict) -> int:
     status draft -> approved -> exported; only reviewer/PM can gate (enforced by
     the web layer in a later slice, not here)."""
     if m.get("id"):
-        con.execute("""UPDATE methods SET task_id=?, product=?, draft=?,
+        cur = con.execute("""UPDATE methods SET task_id=?, product=?, draft=?,
                        status=?, gated_by=? WHERE id=?""",
                     (m["task_id"], m["product"], m["draft"],
                      m.get("status", "draft"), m.get("gated_by"), m["id"]))
         con.commit()
+        # F-10: id 不存在时 UPDATE 命中 0 行, 不能静默返回成功让调用方误以为写入。
+        if cur.rowcount == 0:
+            raise KeyError(f"method id={m['id']} 不存在, 无法更新")
         return m["id"]
     # RETURNING id 一套写法跨双库拿自增主键: SQLite(>=3.35) 与 Postgres 都支持,
     # 避免 SQLite 专属的 rowid/lastrowid 在 PG 上炸 (MR-1b #51 真穿通暴露的方言遗漏).

@@ -595,9 +595,11 @@ def set_judgment(finding_id: int, body: JudgmentIn, user=Depends(current_user)):
         RBAC.require(user, "review")
     except RBAC.PermissionDenied as e:
         raise HTTPException(403, str(e))
-    store.set_judgment(_con(), finding_id,
-                       product_judgment=body.product_judgment,
-                       final_category=body.final_category)
+    hit = store.set_judgment(_con(), finding_id,
+                             product_judgment=body.product_judgment,
+                             final_category=body.final_category)
+    if not hit:
+        raise HTTPException(404, f"finding {finding_id} 不存在")  # H-2: 不再静默 200
     return {"ok": True, "id": finding_id}
 
 
