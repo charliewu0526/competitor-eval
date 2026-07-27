@@ -4,11 +4,12 @@ import { Layout, Menu, Typography } from "antd";
 import {
   DashboardOutlined, TrophyOutlined, TableOutlined, RadarChartOutlined,
   DollarOutlined, BulbOutlined, ExperimentOutlined, SafetyCertificateOutlined,
-  AuditOutlined,
+  AuditOutlined, UnorderedListOutlined,
 } from "@ant-design/icons";
 import { GlossaryProvider } from "./glossary.jsx";
 
 import Dashboard from "./pages/Dashboard.jsx";
+import TaskCatalog from "./pages/TaskCatalog.jsx";
 import Leaderboard from "./pages/Leaderboard.jsx";
 import Matrix from "./pages/Matrix.jsx";
 import ScoreDetail from "./pages/ScoreDetail.jsx";
@@ -22,6 +23,7 @@ const { Header, Sider, Content } = Layout;
 
 const NAV = [
   { key: "/", icon: <DashboardOutlined />, label: "总览" },
+  { key: "/catalog", icon: <UnorderedListOutlined />, label: "任务清单" },
   { key: "/leaderboard", icon: <TrophyOutlined />, label: "排行榜" },
   { key: "/matrix", icon: <TableOutlined />, label: "按题矩阵" },
   { key: "/score", icon: <RadarChartOutlined />, label: "评分详情" },
@@ -61,6 +63,7 @@ export default function App() {
           <Content style={{ margin: 24 }}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/catalog" element={<TaskCatalog />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/matrix" element={<Matrix />} />
               <Route path="/score" element={<ScoreDetail />} />

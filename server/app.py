@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from pipeline import store, leaderboard as LB, findings as F, sampling as SP
 from pipeline import probe as PROBE
+from pipeline import catalog as CATALOG
 from pipeline import auth as AUTH
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
@@ -138,6 +139,24 @@ def get_probes():
         except Exception:
             r["evidence"] = None
     return rows
+
+
+@app.get("/api/catalog")
+def get_catalog():
+    """MR-5 (#41): 按能力域分组的任务清单 (只读派生视图, 不含领取).
+
+    intern 浏览未领取前的题库: 每组 = 一个能力域 (同域才同台), 每题带中立标准
+    Prompt + 说明 + 参赛竞品 (GATE 派生). 领取动作在 #42, 这里只到「看得到」.
+    """
+    return CATALOG.build_catalog()
+
+
+@app.get("/api/catalog/{task_id}")
+def get_catalog_task(task_id: str):
+    card = CATALOG.task_detail(task_id)
+    if card is None:
+        raise HTTPException(404, "task not found in catalog")
+    return card
 
 
 @app.get("/api/spotcheck")

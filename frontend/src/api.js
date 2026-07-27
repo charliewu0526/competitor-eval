@@ -16,6 +16,9 @@ export const getSpotcheck = (status) =>
   api.get("/spotcheck", { params: status ? { status } : {} }).then((r) => r.data);
 export const getAuthorizations = () => api.get("/authorizations").then((r) => r.data);
 export const getEnums = () => api.get("/enums").then((r) => r.data);
+export const getCatalog = () => api.get("/catalog").then((r) => r.data);
+export const getCatalogTask = (taskId) =>
+  api.get(`/catalog/${encodeURIComponent(taskId)}`).then((r) => r.data);
 
 export const postJudgment = (id, body) =>
   api.post(`/findings/${id}/judgment`, body).then((r) => r.data);

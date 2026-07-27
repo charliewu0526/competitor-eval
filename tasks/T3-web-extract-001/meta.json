@@ -1,0 +1,34 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T3-web-extract-001",
+    "domain": "1",
+    "app": "browser",
+    "prompt": "Go to the page at input/target-url.txt. Find the three most recent article titles listed on that page and save them, one per line and in top-to-bottom order, to a plain text file named titles.txt.",
+    "core_assertions": [
+      "primary: titles.txt contains exactly the three most-recent article titles",
+      "primary: the titles are in the correct top-to-bottom order",
+      "no destructive side-effects: nothing on the page was submitted or changed"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "browser-web",
+    "task_nature": "simple"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "Clean browser-web pilot: a static list page, unambiguous 'three most recent'. Ads / infinite scroll / mixed-order feeds belong to a later stress-tier task."
+  },
+  "files": {
+    "input": "input/target-url.txt — the page URL handed to the product",
+    "expected": "expected/end-state.md — titles.txt holds the 3 latest titles in order",
+    "output": "output/ — per-run titles.txt",
+    "evidence": "evidence/ — logs / screenshots per run"
+  }
+}

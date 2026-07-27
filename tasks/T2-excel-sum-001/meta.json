@@ -1,0 +1,34 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T2-excel-sum-001",
+    "domain": "1",
+    "app": "excel",
+    "prompt": "Open the workbook input/sales.xlsx. In sheet 'Q1', put the total of column C (rows 2 through 13) into cell C14, then save the file. Do not change any other cell.",
+    "core_assertions": [
+      "primary: cell C14 equals the exact sum of C2:C13",
+      "primary: the file was saved (artifact exists)",
+      "no destructive side-effects: no other cell value was changed"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "office-suite",
+    "task_nature": "simple"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "Clean office-suite pilot: a single unambiguous sum into one cell. Dirty-data (merged cells, hidden rows, text-as-number) belongs to a later stress-tier task."
+  },
+  "files": {
+    "input": "input/ — sales.xlsx starting workbook (may be faked)",
+    "expected": "expected/end-state.md — C14 holds SUM(C2:C13), all else unchanged",
+    "output": "output/ — per-run saved workbook",
+    "evidence": "evidence/ — logs / screenshots per run"
+  }
+}
