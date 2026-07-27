@@ -1,0 +1,14 @@
+{
+  "display_name": "Simular",
+  "export_mode": "manual",
+  "auto_fields": [],
+  "cost_source": "unavailable",
+  "evidence_source": "screenshot",
+  "note": "闭源桌面 agent:token 花销与内部日志压根不给看 -> 全标 unavailable(缺失是信息,不伪装成 0)。证据只能靠屏幕录制/截图。这是『优雅降级到手动 + 如实标缺失』的样板。",
+  "steps": [
+    "1. 原始产物:全程录屏 + 关键末态截图(它没有导出按钮),放进目录传 --artifact。这是唯一可核查实体。",
+    "2. 日志包:拿不到内部轨迹 -> 让打包器写占位日志包,token/calls 全 unavailable,cost_source=unavailable。绝不猜数、绝不填 0。",
+    "3. model:若界面能看到用的什么模型就填 --model,看不到就留空(availability 会标 false)。",
+    "4. 末态达成人工勾选(--assert):你看屏幕录像核对末态,勾对应人工断言。"
+  ]
+}

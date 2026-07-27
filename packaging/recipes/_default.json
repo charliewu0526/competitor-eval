@@ -1,0 +1,15 @@
+{
+  "display_name": "(未知竞品 — 默认配方)",
+  "export_mode": "manual",
+  "auto_fields": [],
+  "cost_source": "self-report",
+  "evidence_source": "screenshot",
+  "note": "没有专属配方的新竞品退到这里:全字段手动,成本默认标 unavailable(拿不到别填 0)。加一个 <product>.json 即可升级为半自动/自动,打包器代码不动。",
+  "steps": [
+    "1. 原始产物:把该产品跑完这道题的最终产物收齐(导出文件 / 截图 / AI 对话记录),放进一个目录,作为 --artifact 传入。至少一个非空文件,否则校验拒收。",
+    "2. 执行日志:若产品能导出运行日志/轨迹,存成 JSON 传 --log;导不出就让打包器写占位日志包,token/calls 一律标 unavailable(不是 0)。",
+    "3. 成本:闭源产品拿不到 token 花销 -> 全标 unavailable。别猜、别填 0。",
+    "4. 末态达成:由你人工核对末态后勾选 --assert(对应任务的人工断言 ctx key);绝不从产品自述里读成功。",
+    "5. claimed_success:该产品是否『自称』完成(它自己说的),布尔占位,只喂诚实度轴,不当证据。"
+  ]
+}

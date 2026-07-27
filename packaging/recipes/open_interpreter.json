@@ -1,0 +1,14 @@
+{
+  "display_name": "Open Interpreter",
+  "export_mode": "auto",
+  "auto_fields": ["input_tokens", "output_tokens", "model_calls", "model", "events"],
+  "cost_source": "self-report",
+  "evidence_source": "log",
+  "note": "开源本地 agent:对话/消息历史带 usage 字段(litellm 透传),可脚本抽出 token 与 model。开源可拿到过程日志,故走自动;但 usage 是它自报的模型返回,cost_source=self-report。",
+  "steps": [
+    "1. 定位历史:Open Interpreter 的对话记录默认在 ~/.config/open-interpreter 或 --conversation_history 目录下,messages 里带 usage。",
+    "2. 抽字段:从最近一次 run 的 messages 累加 prompt_tokens/completion_tokens -> input/output_tokens;model 取 messages 里的模型名;调用次数 = assistant 消息数。存成 log JSON 传 --log。",
+    "3. 原始产物:把它实际操作出来的文件/终端输出/截图收进 --artifact。",
+    "4. 末态达成人工勾选(--assert)。"
+  ]
+}
