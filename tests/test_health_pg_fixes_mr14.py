@@ -218,5 +218,43 @@ class SilentWriteGuards(unittest.TestCase):
                                       "product": "manus", "draft": "x"})
 
 
+# --- H-3 / L-6: 上线前加固 (skip_migrate / WAL) ---------------------------
+class ConnectHardening(unittest.TestCase):
+    def test_skip_migrate_still_reads_prebuilt_db(self):
+        # H-3: 先正常建表, 再 skip_migrate 连接应能直接读(不重跑建表迁移)。
+        p = str(pathlib.Path(tempfile.mkdtemp()) / "t.db")
+        store.connect(p).close()                       # 首连建表
+        con = store.connect(p, skip_migrate=True)      # 跳过迁移只开连
+        n = con.execute("SELECT COUNT(*) FROM scores").fetchone()[0]
+        self.assertEqual(n, 0)                          # 表在, 读得到
+
+    def test_wal_mode_enabled(self):
+        # L-6: SQLite 连接应启用 WAL(并发读写不互斥, 防 database is locked 穿透 500)。
+        p = str(pathlib.Path(tempfile.mkdtemp()) / "t.db")
+        con = store.connect(p)
+        mode = con.execute("PRAGMA journal_mode").fetchone()[0]
+        self.assertEqual(mode.lower(), "wal", f"journal_mode 应为 wal, 实为 {mode}")
+
+
+# --- M-2: DB 抖动降级 503 而非裸穿透 500 ---------------------------------
+class HealthDegradesTo503(unittest.TestCase):
+    def test_health_returns_503_when_db_unreadable(self):
+        from fastapi.testclient import TestClient
+        import server.app as APP
+        orig = APP._DB_PATH
+        # 指向一个「是目录」的路径 -> sqlite 打不开 -> 端点应降级 503, 不是 500。
+        bad_dir = pathlib.Path(tempfile.mkdtemp()) / "iam_a_dir.db"
+        bad_dir.mkdir(parents=True, exist_ok=True)
+        APP._DB_PATH = str(bad_dir)
+        APP._migrated_for = None                        # 强制这次重新迁移(必失败)
+        try:
+            r = TestClient(APP.app).get("/api/health")
+            self.assertEqual(r.status_code, 503,
+                             f"DB 不可用应降级 503, 实为 {r.status_code}")
+        finally:
+            APP._DB_PATH = orig
+            APP._migrated_for = None
+
+
 if __name__ == "__main__":
     unittest.main()
