@@ -27,6 +27,8 @@ from pipeline import assignments as ASSIGN
 from pipeline import submissions as SUB
 from pipeline import artifact_store as ART
 from pipeline import review_queue as RQ
+from pipeline import methods as METH
+from pipeline import registry as REG
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 # CORS 白名单: 默认只放本地前端 (Vite 5273 / 常见 3000)。生产用 env 明列前端域名,
@@ -655,3 +657,92 @@ def recalibrate_from_review(queue_id: int, user=Depends(current_user)):
     return {"ok": True, "id": queue_id,
             "recalibration_triggered": out["recalibration_triggered"],
             "authorization": out["authorization"]}
+
+
+# === MR-14 (#50) 方法初稿提炼 + 复核闸 + 导出 (方法复核闸) =================
+def _method_view(m: dict) -> dict:
+    """对外投影: 方法初稿的对外字段 (含把关状态)。"""
+    return {
+        "id": m["id"], "task_id": m["task_id"], "product": m["product"],
+        "draft": m["draft"], "status": m["status"],
+        "gated_by": m.get("gated_by"),
+    }
+
+
+@app.get("/api/methods")
+def list_methods(status: str | None = None, user=Depends(current_user)):
+    """列出方法初稿 (可按 status 过滤)。任意已登录用户 (intern 起) 可看。"""
+    try:
+        RBAC.require(user, "submit")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    return [_method_view(m) for m in METH.list_methods(_con(), status=status)]
+
+
+class MethodDraftIn(BaseModel):
+    task_id: str
+    product: str
+    draft: str
+
+
+@app.post("/api/methods")
+def create_method(body: MethodDraftIn, user=Depends(current_user)):
+    """intern 在差距证据包上创建方法初稿 (draft, AC1 / story 34)。"""
+    try:
+        m = METH.draft_method(_con(), author=user, task_id=body.task_id,
+                              product=body.product, draft=body.draft)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except METH.MethodError as e:
+        raise HTTPException(400, str(e))
+    return _method_view(m)
+
+
+@app.post("/api/methods/{method_id}/approve")
+def approve_method(method_id: int, user=Depends(current_user)):
+    """reviewer/PM 把关方法初稿 draft->approved (AC3 / story 35)。
+
+    intern -> 403; 非 draft (已批/已导出) -> 409。
+    """
+    try:
+        m = METH.approve_method(_con(), reviewer=user, method_id=method_id)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except METH.MethodNotFound as e:
+        raise HTTPException(404, str(e))
+    except METH.IllegalMethodState as e:
+        raise HTTPException(409, str(e))
+    return _method_view(m)
+
+
+@app.get("/api/methods/{method_id}/preview")
+def preview_method(method_id: int, user=Depends(current_user)):
+    """把关前预览导出后研发看到的 markdown (不改状态)。reviewer/PM 用。"""
+    try:
+        RBAC.require(user, "gate_method")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    try:
+        doc = METH.preview_export(_con(), method_id, registry=REG.default_registry())
+    except METH.MethodNotFound as e:
+        raise HTTPException(404, str(e))
+    return {"id": method_id, "document": doc}
+
+
+@app.post("/api/methods/{method_id}/export")
+def export_method(method_id: int, user=Depends(current_user)):
+    """把已把关的 Method 导出为研发可读格式 (AC4 / story 36)。
+
+    复核闸核心 (AC2): 未经把关 (draft) -> 409 NotApproved, 不能越过 reviewer。
+    intern -> 403。
+    """
+    try:
+        out = METH.export_method(_con(), actor=user, method_id=method_id,
+                                 registry=REG.default_registry())
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except METH.MethodNotFound as e:
+        raise HTTPException(404, str(e))
+    except METH.NotApproved as e:
+        raise HTTPException(409, str(e))
+    return {"method": _method_view(out["method"]), "document": out["document"]}

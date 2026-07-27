@@ -729,6 +729,11 @@ def set_method_status(con, method_id: int, status: str,
     con.commit()
 
 
+def get_method(con, method_id: int) -> dict | None:
+    row = con.execute("SELECT * FROM methods WHERE id=?", (method_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def all_methods(con, status: str | None = None) -> list[dict]:
     sql = "SELECT * FROM methods"
     args: tuple = ()
