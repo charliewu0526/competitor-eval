@@ -41,6 +41,9 @@ REQUIRED_ROUTES = {
     ("GET", "/api/assignments"),
     ("POST", "/api/assignments/{assignment_id}/claim"),
     ("POST", "/api/assignments/{assignment_id}/submit"),
+    # MR-11 (#47) 差距报告前端接缝 (列表 + 单题)
+    ("GET", "/api/gap-report"),
+    ("GET", "/api/gap-report/{task_id}"),
 }
 
 

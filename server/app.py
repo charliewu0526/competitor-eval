@@ -29,6 +29,7 @@ from pipeline import artifact_store as ART
 from pipeline import review_queue as RQ
 from pipeline import methods as METH
 from pipeline import registry as REG
+from pipeline import gap_report as GAP
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 # CORS 白名单: 默认只放本地前端 (Vite 5273 / 常见 3000)。生产用 env 明列前端域名,
@@ -158,6 +159,46 @@ def get_findings():
         except Exception:
             r["evidence"] = None
     return rows
+
+
+@app.get("/api/gap-report")
+def list_gap_report_tasks(baseline: str = "vio"):
+    """MR-11 (#47): 差距报告可选任务列表 (派生视图, 引擎不改).
+
+    每道对比任务(有 score 落库的 task_id)产一份差距报告。这里只列出「哪些题
+    能看差距报告」+ 一行摘要(参赛产品数 / 大差距条数),供前端下拉选题。
+    """
+    con = _con()
+    scores = store.all_scores(con)
+    finds = store.all_findings(con)
+    reg = REG.default_registry()
+    task_ids = sorted({s.get("task_id") for s in scores if s.get("task_id")})
+    out = []
+    for tid in task_ids:
+        rep = GAP.build_report(tid, scores, finds, registry=reg, baseline=baseline)
+        n_big_gap = sum(1 for d in rep.score_diffs if d.big_gap)
+        n_big_lag = sum(1 for d in rep.score_diffs if d.big_lag)
+        out.append({
+            "task_id": tid,
+            "products": len(rep.score_diffs),
+            "big_gaps": n_big_gap,
+            "big_lags": n_big_lag,
+            "findings": len(rep.findings),
+        })
+    return {"baseline": baseline, "tasks": out}
+
+
+@app.get("/api/gap-report/{task_id}")
+def get_gap_report(task_id: str, baseline: str = "vio"):
+    """MR-11 (#47): 一道对比任务的完整差距报告 (派生视图, 引擎不改)."""
+    con = _con()
+    scores = store.all_scores(con)
+    finds = store.all_findings(con)
+    if not any(s.get("task_id") == task_id for s in scores):
+        raise HTTPException(404, "no scores for this task")
+    rep = GAP.build_report(task_id, scores, finds,
+                           registry=REG.default_registry(), baseline=baseline)
+    return rep.as_dict()
 
 
 @app.get("/api/probes")

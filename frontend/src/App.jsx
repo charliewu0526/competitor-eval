@@ -4,7 +4,7 @@ import { Layout, Menu, Typography } from "antd";
 import {
   DashboardOutlined, TrophyOutlined, TableOutlined, RadarChartOutlined,
   DollarOutlined, BulbOutlined, ExperimentOutlined, SafetyCertificateOutlined,
-  AuditOutlined, UnorderedListOutlined, AppstoreOutlined,
+  AuditOutlined, UnorderedListOutlined, AppstoreOutlined, DiffOutlined,
 } from "@ant-design/icons";
 import { GlossaryProvider } from "./glossary.jsx";
 
@@ -16,6 +16,7 @@ import Matrix from "./pages/Matrix.jsx";
 import ScoreDetail from "./pages/ScoreDetail.jsx";
 import Cost from "./pages/Cost.jsx";
 import Findings from "./pages/Findings.jsx";
+import GapReport from "./pages/GapReport.jsx";
 import Probes from "./pages/Probes.jsx";
 import SpotCheck from "./pages/SpotCheck.jsx";
 import Authorizations from "./pages/Authorizations.jsx";
@@ -31,6 +32,7 @@ const NAV = [
   { key: "/score", icon: <RadarChartOutlined />, label: "评分详情" },
   { key: "/cost", icon: <DollarOutlined />, label: "成本面板" },
   { key: "/findings", icon: <BulbOutlined />, label: "发现看板" },
+  { key: "/gap-report", icon: <DiffOutlined />, label: "差距报告" },
   { key: "/probes", icon: <ExperimentOutlined />, label: "能力专项" },
   { key: "/spotcheck", icon: <SafetyCertificateOutlined />, label: "抽查队列" },
   { key: "/authorizations", icon: <AuditOutlined />, label: "黄金集授权" },
@@ -71,6 +73,7 @@ export default function App() {
               <Route path="/score" element={<ScoreDetail />} />
               <Route path="/cost" element={<Cost />} />
               <Route path="/findings" element={<Findings />} />
+              <Route path="/gap-report" element={<GapReport />} />
               <Route path="/probes" element={<Probes />} />
               <Route path="/spotcheck" element={<SpotCheck />} />
               <Route path="/authorizations" element={<Authorizations />} />
