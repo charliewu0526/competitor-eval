@@ -8,6 +8,7 @@ __pycache__/
 board/competitor_eval.db
 board/board-snapshot.db
 board/*.log
+board/pgdata/
 __pycache__/
 *.pyc
 

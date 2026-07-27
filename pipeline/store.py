@@ -613,14 +613,15 @@ def upsert_method(con, m: dict) -> int:
                      m.get("status", "draft"), m.get("gated_by"), m["id"]))
         con.commit()
         return m["id"]
-    cur = con.execute("""INSERT INTO methods (task_id, product, draft, status,
-                         gated_by, created_ts) VALUES (?,?,?,?,?,?)""",
+    # RETURNING id 一套写法跨双库拿自增主键: SQLite(>=3.35) 与 Postgres 都支持,
+    # 避免 SQLite 专属的 rowid/lastrowid 在 PG 上炸 (MR-1b #51 真穿通暴露的方言遗漏).
+    row = con.execute("""INSERT INTO methods (task_id, product, draft, status,
+                         gated_by, created_ts) VALUES (?,?,?,?,?,?)
+                         RETURNING id""",
                       (m["task_id"], m["product"], m["draft"],
                        m.get("status", "draft"), m.get("gated_by"),
-                       m.get("created_ts", time.time())))
+                       m.get("created_ts", time.time()))).fetchone()
     con.commit()
-    row = con.execute("SELECT id FROM methods WHERE rowid=?",
-                      (cur.lastrowid,)).fetchone()
     return row["id"]
 
 

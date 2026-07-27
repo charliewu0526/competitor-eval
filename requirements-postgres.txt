@@ -1,0 +1,12 @@
+# MR-1b (#51): Postgres 真穿通所需依赖 (可选; 不装则默认 SQLite 后端, 现有测试全绿).
+#
+# 立场: 自托管、数据不出本地 (ADR-0018)。本机无 brew/docker, 故用 pgserver
+# ——它把官方 PostgreSQL 二进制打进 wheel, 纯 pip 安装, 数据落 board/pgdata。
+# pg8000 是纯 Python 驱动 (无需编译), store.connect_url 用它连 PG。
+#
+# 装: pip install -r requirements-postgres.txt
+# 起本地 PG: python scripts/pg_local.py start   (打印 DATABASE_URL)
+# 跑 PG 集成测: DATABASE_URL=... python -m pytest tests/test_postgres_passthrough_mr1b.py
+
+pg8000>=1.31        # 纯 Python Postgres 驱动 (store.connect_url)
+pgserver>=0.1.4     # 自托管本地 Postgres (bundled 官方二进制, 数据不出本地); 部署用真 PG server 时可不装
