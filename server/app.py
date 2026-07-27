@@ -9,12 +9,13 @@ Run:  uvicorn server.app:app --port 8600   (from repo root)
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from pipeline import store, leaderboard as LB, findings as F, sampling as SP
 from pipeline import probe as PROBE
+from pipeline import auth as AUTH
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 app.add_middleware(
@@ -156,6 +157,84 @@ def get_enums():
         "final_category": list(F.FINAL_CATEGORY_VALUES),
         "suspected": list(F.SUSPECTED_VALUES),
     }
+
+
+# === MR-3 (#39) 账号: 私发链接自注册登录 =================================
+def current_user(authorization: str | None = Header(default=None)):
+    """依赖注入: 从 Authorization: Bearer <token> 解析当前用户与角色 (story 1)."""
+    token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+    return AUTH.whoami(_con(), token)
+
+
+class InviteIn(BaseModel):
+    note: str | None = None
+    ttl_seconds: float | None = None
+    created_by: str | None = None
+
+
+@app.post("/api/invites")
+def issue_invite(body: InviteIn, user=Depends(current_user)):
+    """PM 签发私发注册链接。仅 owner 可签发 (story 2: 不对公网开放)。"""
+    if not user or user.get("role") != "owner":
+        raise HTTPException(403, "仅 PM(owner) 可签发注册链接")
+    inv = AUTH.issue_invite(_con(), created_by=user["id"],
+                            note=body.note, ttl_seconds=body.ttl_seconds)
+    return {"token": inv["token"], "note": inv.get("note"),
+            "expires_ts": inv.get("expires_ts")}
+
+
+class RegisterIn(BaseModel):
+    invite_token: str
+    name: str | None = None
+
+
+@app.post("/api/register")
+def register(body: RegisterIn):
+    """持有效链接自注册 -> 默认 intern -> 注册即登录拿会话令牌。
+
+    无链接/链接失效 -> 400 (无链接不能注册, story 2)。
+    """
+    try:
+        res = AUTH.register(_con(), invite_token=body.invite_token, name=body.name)
+    except AUTH.AuthError as e:
+        raise HTTPException(400, str(e))
+    return {"session_token": res["session_token"],
+            "user": {"id": res["user"]["id"], "name": res["user"]["name"],
+                     "role": res["user"]["role"]}}
+
+
+class LoginIn(BaseModel):
+    user_id: str
+
+
+@app.post("/api/login")
+def login(body: LoginIn):
+    """已注册用户换发新会话令牌 (无密码, 链接即凭证; ADR-0019 最薄)。"""
+    try:
+        token = AUTH.login(_con(), user_id=body.user_id)
+    except AUTH.AuthError as e:
+        raise HTTPException(401, str(e))
+    return {"session_token": token}
+
+
+@app.get("/api/me")
+def me(user=Depends(current_user)):
+    """会话可识别当前用户与角色 (story 1 AC)。未登录 -> 401。"""
+    if not user:
+        raise HTTPException(401, "未登录或会话已失效")
+    return {"id": user["id"], "name": user.get("name"), "role": user["role"]}
+
+
+@app.post("/api/logout")
+def logout(authorization: str | None = Header(default=None)):
+    token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+    if token:
+        AUTH.logout(_con(), token)
+    return {"ok": True}
 
 
 # --- writes ---------------------------------------------------------------

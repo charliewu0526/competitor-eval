@@ -158,6 +158,27 @@ CREATE TABLE IF NOT EXISTS methods (
     gated_by             TEXT,                -- 把关的 reviewer/PM users.id
     created_ts           REAL
 );
+
+-- === MR-3 (#39) 私发链接自注册登录 (ADR-0014 注册即 intern) ==============
+-- invite: PM 私发的注册凭证. 无链接不能注册 (story 2 数据源可控, 不对公网开放).
+--         一次性消费: used_by 落定后不能再注册. expires_ts NULL = 不过期.
+CREATE TABLE IF NOT EXISTS invites (
+    token                TEXT PRIMARY KEY,   -- 注册链接里的凭证 (随机不可猜)
+    note                 TEXT,               -- 给谁的备注 (PM 记忆用)
+    created_by           TEXT,               -- 签发者 users.id (owner)
+    created_ts           REAL,
+    expires_ts           REAL,               -- NULL = 不过期
+    used_by              TEXT,               -- 注册成功后消费者 users.id; NULL = 未用
+    used_ts              REAL
+);
+
+-- session: 登录后颁发的会话令牌. 会话可识别当前用户与角色 (story 1).
+CREATE TABLE IF NOT EXISTS sessions (
+    token                TEXT PRIMARY KEY,   -- 会话令牌 (bearer)
+    user_id              TEXT NOT NULL,      -- users.id
+    created_ts           REAL,
+    expires_ts           REAL                -- NULL = 不过期
+);
 """
 
 
@@ -619,6 +640,96 @@ def all_methods(con, status: str | None = None) -> list[dict]:
         args = (status,)
     sql += " ORDER BY id"
     return [dict(r) for r in con.execute(sql, args)]
+
+
+# === MR-3 (#39) 私发链接自注册登录: invites + sessions ===================
+def create_invite(con, inv: dict) -> str:
+    """PM 签发一张私发注册链接凭证 (无链接不能注册, story 2)."""
+    con.execute("""
+        INSERT INTO invites (token, note, created_by, created_ts, expires_ts)
+        VALUES (?,?,?,?,?)
+    """, (inv["token"], inv.get("note"), inv.get("created_by"),
+          inv.get("created_ts", time.time()), inv.get("expires_ts")))
+    con.commit()
+    return inv["token"]
+
+
+def get_invite(con, token: str) -> dict | None:
+    row = con.execute("SELECT * FROM invites WHERE token=?", (token,)).fetchone()
+    return dict(row) if row else None
+
+
+def invite_is_valid(con, token: str, now: float | None = None) -> bool:
+    """有效 = 存在 + 未被消费 + 未过期. 决定「持链接能不能注册」."""
+    inv = get_invite(con, token)
+    if not inv:
+        return False
+    if inv.get("used_by"):
+        return False
+    exp = inv.get("expires_ts")
+    if exp is not None and (now or time.time()) > exp:
+        return False
+    return True
+
+
+def consume_invite(con, token: str, user_id: str, now: float | None = None) -> bool:
+    """一次性消费: 原子把 invite 绑定到注册者. 并发下仅一人赢 (used_by IS NULL 守卫)."""
+    ts = now or time.time()
+    if _db.is_postgres(con):
+        row = con.execute("SELECT used_by, expires_ts FROM invites WHERE token=? FOR UPDATE",
+                          (token,)).fetchone()
+        if not row or row["used_by"] is not None or \
+           (row["expires_ts"] is not None and ts > row["expires_ts"]):
+            con.commit()
+            return False
+        con.execute("UPDATE invites SET used_by=?, used_ts=? WHERE token=?",
+                    (user_id, ts, token))
+        con.commit()
+        return True
+    cur = con.execute(
+        "UPDATE invites SET used_by=?, used_ts=? WHERE token=? AND used_by IS NULL "
+        "AND (expires_ts IS NULL OR expires_ts>=?)",
+        (user_id, ts, token, ts))
+    con.commit()
+    return cur.rowcount == 1
+
+
+def all_invites(con) -> list[dict]:
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM invites ORDER BY created_ts, token")]
+
+
+def create_session(con, sess: dict) -> str:
+    """登录成功颁发会话令牌 (bearer). 会话可识别当前用户与角色 (story 1)."""
+    con.execute("""
+        INSERT INTO sessions (token, user_id, created_ts, expires_ts)
+        VALUES (?,?,?,?)
+    """, (sess["token"], sess["user_id"],
+          sess.get("created_ts", time.time()), sess.get("expires_ts")))
+    con.commit()
+    return sess["token"]
+
+
+def get_session(con, token: str) -> dict | None:
+    row = con.execute("SELECT * FROM sessions WHERE token=?", (token,)).fetchone()
+    return dict(row) if row else None
+
+
+def session_user(con, token: str, now: float | None = None) -> dict | None:
+    """解析会话令牌 -> 当前用户 (含 role). 过期/无效 -> None."""
+    sess = get_session(con, token)
+    if not sess:
+        return None
+    exp = sess.get("expires_ts")
+    if exp is not None and (now or time.time()) > exp:
+        return None
+    return get_user(con, sess["user_id"])
+
+
+def delete_session(con, token: str) -> None:
+    """登出: 撤销会话令牌."""
+    con.execute("DELETE FROM sessions WHERE token=?", (token,))
+    con.commit()
 
 
 # --- reads ----------------------------------------------------------------
