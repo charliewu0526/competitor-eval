@@ -4,13 +4,14 @@ import { Layout, Menu, Typography } from "antd";
 import {
   DashboardOutlined, TrophyOutlined, TableOutlined, RadarChartOutlined,
   DollarOutlined, BulbOutlined, ExperimentOutlined, SafetyCertificateOutlined,
-  AuditOutlined, UnorderedListOutlined,
+  AuditOutlined, UnorderedListOutlined, AppstoreOutlined,
 } from "@ant-design/icons";
 import { GlossaryProvider } from "./glossary.jsx";
 
 import Dashboard from "./pages/Dashboard.jsx";
 import TaskCatalog from "./pages/TaskCatalog.jsx";
 import Leaderboard from "./pages/Leaderboard.jsx";
+import DomainBoard from "./pages/DomainBoard.jsx";
 import Matrix from "./pages/Matrix.jsx";
 import ScoreDetail from "./pages/ScoreDetail.jsx";
 import Cost from "./pages/Cost.jsx";
@@ -25,6 +26,7 @@ const NAV = [
   { key: "/", icon: <DashboardOutlined />, label: "总览" },
   { key: "/catalog", icon: <UnorderedListOutlined />, label: "任务清单" },
   { key: "/leaderboard", icon: <TrophyOutlined />, label: "排行榜" },
+  { key: "/domain-board", icon: <AppstoreOutlined />, label: "分维度榜单" },
   { key: "/matrix", icon: <TableOutlined />, label: "按题矩阵" },
   { key: "/score", icon: <RadarChartOutlined />, label: "评分详情" },
   { key: "/cost", icon: <DollarOutlined />, label: "成本面板" },

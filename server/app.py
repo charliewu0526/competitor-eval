@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from pipeline import store, leaderboard as LB, findings as F, sampling as SP
 from pipeline import probe as PROBE
 from pipeline import catalog as CATALOG
+from pipeline import domain_board as DB
 from pipeline import auth as AUTH
 from pipeline import rbac as RBAC
 from pipeline import assignments as ASSIGN
@@ -98,6 +99,18 @@ def overview():
 @app.get("/api/leaderboard")
 def get_leaderboard(baseline: str = "vio"):
     return LB.from_store(_con(), baseline=baseline)
+
+
+@app.get("/api/domain-board")
+def get_domain_board(baseline: str = "vio",
+                     window_days: int = DB.DEFAULT_FRESHNESS_DAYS):
+    """MR-12 (#48): 能力域分维度榜单 + 版本/日期/stale (派生视图, 引擎不改).
+
+    按 capability_domain 分桶, 每桶复用 leaderboard 排一张榜 (同域才同台)。
+    每条分数透传竞品版本 + 测试日期; 超 window_days 天标 stale (ADR-0017); cannot-reach
+    产品归入该榜 excluded (标「未参赛」而非 0 分垫底)。
+    """
+    return DB.from_store(_con(), baseline=baseline, window_days=window_days)
 
 
 @app.get("/api/scores")

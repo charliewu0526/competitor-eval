@@ -6,6 +6,10 @@ export const getOverview = () => api.get("/overview").then((r) => r.data);
 export const getGlossary = () => api.get("/glossary").then((r) => r.data);
 export const getLeaderboard = (baseline = "vio") =>
   api.get("/leaderboard", { params: { baseline } }).then((r) => r.data);
+export const getDomainBoard = (baseline = "vio", windowDays) =>
+  api.get("/domain-board", {
+    params: { baseline, ...(windowDays != null ? { window_days: windowDays } : {}) },
+  }).then((r) => r.data);
 export const getScores = () => api.get("/scores").then((r) => r.data);
 export const getScore = (task, product) =>
   api.get(`/score/${encodeURIComponent(task)}/${encodeURIComponent(product)}`).then((r) => r.data);
