@@ -97,6 +97,21 @@ class Redactor:
         return out
 
 
+def make_redactor(registry=None, price_table=None, *, extra_terms=(),
+                  replacement: str = REDACTED) -> "Redactor":
+    """构建一个指纹脱敏器,词典 DERIVED 自 registry(品牌)+ price_table(模型)。
+
+    这是脱敏词典的单一来源:MR-9 的日志双视图与 MR-10 的盲评面板(洗 transcript /
+    artifact 摘要)共用它,保证「加竞品 / 加模型 = 改数据不改脱敏代码」只兑现一次。
+    extra_terms 让调用方补充本包实际用到、但价表里没有的模型名(闭源竞品常见)。
+    """
+    terms = _brand_terms(registry) | _model_terms(price_table)
+    for t in extra_terms:
+        if t and str(t).strip():
+            terms.add(str(t).strip())
+    return Redactor(terms, replacement=replacement)
+
+
 # --- the two-view contract ---------------------------------------------------
 @dataclass
 class LogViews:
@@ -130,12 +145,10 @@ def derive_views(log_facts: dict, *, registry=None, price_table=None,
     raw = dict(log_facts)
 
     if redactor is None:
-        terms = _brand_terms(registry) | _model_terms(price_table)
         # 本包实际用的 model 名也纳入指纹(闭源竞品可能用价表没有的模型)。
         m = log_facts.get(_MODEL_IDENTITY_KEY)
-        if m and str(m).strip():
-            terms.add(str(m).strip())
-        redactor = Redactor(terms)
+        extra = (m,) if (m and str(m).strip()) else ()
+        redactor = make_redactor(registry, price_table, extra_terms=extra)
 
     redacted = dict(log_facts)
     # 1. 模型身份键:非空即抹成占位符(区别于 unavailable —— 是「有但盲掉」)。
