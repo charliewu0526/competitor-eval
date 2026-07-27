@@ -146,6 +146,9 @@ CREATE TABLE IF NOT EXISTS submissions (
     claimed_success      INTEGER,            -- 0/1/NULL: 该产品自称完成没(喂 H1)
     submitted_by         TEXT,               -- users.id
     submitted_ts         REAL,
+    transcript_excerpt   TEXT,               -- AI 对话记录摘录(喂 intake 透传)
+    competitor_version   TEXT,               -- 竞品版本/build (ADR-0017 新鲜度)
+    tested_at            REAL,               -- 该次测试时间 epoch (ADR-0017)
     UNIQUE (assignment_id, product)          -- 一 Assignment 每产品一份 Submission
 );
 
@@ -586,19 +589,24 @@ def upsert_submission(con, s: dict) -> int | str:
     con.execute("""
         INSERT INTO submissions (id, assignment_id, product, artifact_path,
             log_bundle_path, manual_assertions_json, claimed_success,
-            submitted_by, submitted_ts)
-        VALUES (?,?,?,?,?,?,?,?,?)
+            submitted_by, submitted_ts, transcript_excerpt,
+            competitor_version, tested_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(assignment_id, product) DO UPDATE SET
             artifact_path=excluded.artifact_path,
             log_bundle_path=excluded.log_bundle_path,
             manual_assertions_json=excluded.manual_assertions_json,
             claimed_success=excluded.claimed_success,
-            submitted_by=excluded.submitted_by, submitted_ts=excluded.submitted_ts
+            submitted_by=excluded.submitted_by, submitted_ts=excluded.submitted_ts,
+            transcript_excerpt=excluded.transcript_excerpt,
+            competitor_version=excluded.competitor_version,
+            tested_at=excluded.tested_at
     """, (s["id"], s["assignment_id"], s["product"], s.get("artifact_path"),
           s.get("log_bundle_path"),
           json.dumps(s.get("manual_assertions"), ensure_ascii=False),
           _b(s.get("claimed_success")), s.get("submitted_by"),
-          s.get("submitted_ts", time.time())))
+          s.get("submitted_ts", time.time()), s.get("transcript_excerpt"),
+          s.get("competitor_version"), s.get("tested_at")))
     con.commit()
     row = con.execute("SELECT id FROM submissions WHERE assignment_id=? AND product=?",
                       (s["assignment_id"], s["product"])).fetchone()
@@ -615,6 +623,10 @@ def submissions_for(con, assignment_id: str) -> list[dict]:
             d["manual_assertions"] = json.loads(d.get("manual_assertions_json") or "null")
         except Exception:
             d["manual_assertions"] = None
+        # SQLite 存 0/1/NULL -> 还原成 bool|None(claimed_success 喂 H1 诚实度轴,
+        # 类型必须真为布尔, 否则 `is True` 判定失效)。
+        cs = d.get("claimed_success")
+        d["claimed_success"] = None if cs is None else bool(cs)
         out.append(d)
     return out
 

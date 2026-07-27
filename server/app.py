@@ -9,7 +9,10 @@ Run:  uvicorn server.app:app --port 8600   (from repo root)
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, Header, Depends
+import json
+
+from fastapi import (FastAPI, HTTPException, Header, Depends, UploadFile, File,
+                     Form)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -19,6 +22,8 @@ from pipeline import catalog as CATALOG
 from pipeline import auth as AUTH
 from pipeline import rbac as RBAC
 from pipeline import assignments as ASSIGN
+from pipeline import submissions as SUB
+from pipeline import artifact_store as ART
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 app.add_middleware(
@@ -406,6 +411,101 @@ def reclaim_stale_assignments(user=Depends(current_user)):
         raise HTTPException(403, str(e))
     reclaimed = ASSIGN.reclaim_stale(_con())
     return {"reclaimed": reclaimed, "count": len(reclaimed)}
+
+
+# === MR-7 (#43) 提交表单 + 原始产物上传 + 缺证据拒收 =====================
+@app.get("/api/assignments/{assignment_id}/submissions")
+def list_submissions(assignment_id: str, user=Depends(current_user)):
+    """一道 Assignment 的提交进度: 参赛集里哪些产品已交、哪些还缺 (整组对打看板)。
+
+    任意已登录用户(intern 起)可看自己领的活的进度。
+    """
+    try:
+        RBAC.require(user, "submit")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    try:
+        return SUB.submission_progress(_con(), assignment_id)
+    except SUB.SubmissionError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/assignments/{assignment_id}/submissions")
+async def submit_submission(
+    assignment_id: str,
+    product: str = Form(...),
+    artifact: UploadFile | None = File(default=None),
+    log_bundle: UploadFile | None = File(default=None),
+    manual_assertions: str | None = Form(default=None),
+    claimed_success: bool | None = Form(default=None),
+    transcript_excerpt: str = Form(default=""),
+    competitor_version: str | None = Form(default=None),
+    tested_at: float | None = Form(default=None),
+    user=Depends(current_user),
+):
+    """intern 为一道 Assignment 里的一个产品提交一份 Submission (multipart)。
+
+    先落盘原始产物 + 日志包(服务端文件目录, ADR-0019 库里只存路径), 再走
+    submissions 策略层的三关守卫(可提交 / 产品在参赛集 / 有原始产物)。
+    缺原始产物 -> 400(无证据不入池, story 17 / AC3)。落库成功即流向 #38 intake。
+    """
+    try:
+        RBAC.require(user, "submit")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+
+    con = _con()
+
+    # 1. 原始产物落盘(缺内容 -> 不落盘, 交由策略层拒收)。
+    artifact_path = None
+    if artifact is not None:
+        data = await artifact.read()
+        if ART.has_bytes(data):
+            artifact_path = ART.save_upload(
+                assignment_id=assignment_id, product=product, kind="artifact",
+                filename=artifact.filename, data=data)
+
+    # 2. 日志包落盘(#43 只强制原始产物; 日志包缺失如实透传给 intake)。
+    log_bundle_path = None
+    if log_bundle is not None:
+        data = await log_bundle.read()
+        if ART.has_bytes(data):
+            log_bundle_path = ART.save_upload(
+                assignment_id=assignment_id, product=product, kind="log_bundle",
+                filename=log_bundle.filename, data=data)
+
+    # 3. 人工勾选断言(JSON 字符串)解析。
+    ticks = None
+    if manual_assertions:
+        try:
+            ticks = json.loads(manual_assertions)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "manual_assertions 必须是合法 JSON 对象")
+        if not isinstance(ticks, dict):
+            raise HTTPException(400, "manual_assertions 必须是 JSON 对象(键=断言 ctx 名)")
+
+    # 4. 策略层守卫 + 落库(缺原始产物在此被拒 -> 400)。
+    try:
+        row = SUB.submit_product(
+            con, assignment_id=assignment_id, product=product,
+            artifact_path=artifact_path, log_bundle_path=log_bundle_path,
+            manual_assertions=ticks, claimed_success=claimed_success,
+            submitted_by=user["id"], transcript_excerpt=transcript_excerpt,
+            competitor_version=competitor_version, tested_at=tested_at)
+    except SUB.EvidenceMissing as e:
+        raise HTTPException(400, str(e))       # 无证据不入池
+    except SUB.WrongProduct as e:
+        raise HTTPException(400, str(e))       # 领取粒度错单
+    except SUB.NotSubmittable as e:
+        code = 404 if "不存在" in str(e) else 409
+        raise HTTPException(code, str(e))
+
+    return {
+        "id": row["id"], "assignment_id": assignment_id, "product": product,
+        "artifact_path": row.get("artifact_path"),
+        "log_bundle_path": row.get("log_bundle_path"),
+        "progress": SUB.submission_progress(con, assignment_id),
+    }
 
 
 # --- writes ---------------------------------------------------------------
