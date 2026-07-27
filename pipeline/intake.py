@@ -10,9 +10,12 @@ Iron rules carried across the seam (PRD 立身之本):
      the F1 task requirement — NEVER trusted from the submission's self-report
      (an intern/竞品 can't self-declare it reached the target).
   2. Machine-verifiable objective assertions (file exists / value equals / a log
-     event) are auto-judged; only the human-ticked assertions (「微信消息真发出
-     了」) are read from the submission. Both flow through the same
-     objective.run_assertions — the split is just which ctx keys each populates.
+     event) are auto-judged from AUTHORITATIVE sources (server-resolved artifact
+     path, parsed log events) — never from an intern's self-report; only the
+     human-ticked assertions (「微信消息真发出了」) are read from the submission.
+     MR-8 (#44) enforces this: an intern who ticks a key owned by a MACHINE
+     assertion is REJECTED (AssertionScopeError). Both kinds still flow through
+     the one objective.run_assertions; the split is the SOURCE of each ctx key.
   3. cost_* comes from PARSING the mandatory log bundle (token/call/timeline),
      folded to $ by the A3 price table — 拿不到 => unavailable, never a fake 0.
   4. claimed_success rides through untouched to feed the H1 honesty axis (E4).
@@ -36,6 +39,15 @@ from pipeline.gate import gate_for
 from pipeline.cost_client import CostAccountant
 
 
+class AssertionScopeError(ValueError):
+    """intern 试图手勾一个本该机器判的断言 (#44 立身之本守卫)。
+
+    机器可验断言(文件存在 / 某格值 / 日志有无某事件)必须由脚本自动判,不落人手。
+    若 submission.manual_assertions 里带了 MACHINE 断言拥有的 ctx 键,说明 intern
+    想自报一个可核查的事实 —— 这会稀释「只看末态、机器判现象」的立身之本,拒收。
+    """
+
+
 # --- the seam INPUT: a Submission (one product, one run of one Assignment) -----
 @dataclass
 class Submission:
@@ -52,6 +64,7 @@ class Submission:
     artifact_path: str | None = None
     log_bundle_path: str | None = None
     manual_assertions: dict = field(default_factory=dict)
+    machine_ctx: dict = field(default_factory=dict)  # 服务端从产物/日志派生的机器输入(人碰不到)
     claimed_success: bool | None = None
     run_idx: int = 1
     transcript_excerpt: str = ""
@@ -67,6 +80,7 @@ class Submission:
             artifact_path=row.get("artifact_path"),
             log_bundle_path=row.get("log_bundle_path"),
             manual_assertions=row.get("manual_assertions") or {},
+            machine_ctx=row.get("machine_ctx") or {},
             claimed_success=row.get("claimed_success"),
             run_idx=row.get("run_idx", 1),
             transcript_excerpt=row.get("transcript_excerpt", ""),
@@ -130,16 +144,39 @@ class LogBundleParser:
         return _coerce_facts(raw)
 
 
-def _build_ctx(submission: Submission, log_facts: dict) -> dict:
-    """Merge the objective-assertion ctx: human ticks + machine-readable refs.
+def _build_ctx(submission: Submission, log_facts: dict,
+               assertions: list) -> dict:
+    """Assemble the objective-assertion ctx by SPLITTING inputs by source (#44).
 
-    Human-ticked flags (manual_check) live in submission.manual_assertions.
-    Machine assertions read artifact_path (file_exists), any ctx values the
-    intern recorded, and log events (「日志有无某事件」).
+    机器可验断言(MACHINE)的输入只从权威来源填,人绝不经手:
+      * 产物路径(file_exists/file_nonempty)= 服务端落盘的 artifact_path。
+      * 日志事件(log_event 的「日志有无某事件」)= 从日志包解析出的 events。
+      * 某格值(equals)= 从产物/日志派生的 machine_ctx(MVP 暂无自动提取器时缺该
+        键 -> 断言判 False,即「未验证 != 通过」,不伪装成功)。
+    人工勾选断言(HUMAN)才从 submission.manual_assertions 读。
+
+    守卫: intern 若在 manual_assertions 里带了 MACHINE 断言的 ctx 键(想手报一个
+    可核查事实),raise AssertionScopeError —— 机器该判的不落人手。
     """
-    ctx = dict(submission.manual_assertions or {})
-    ctx.setdefault("artifact_path", submission.artifact_path)
-    ctx.setdefault("log_events", log_facts.get("events", []))
+    manual = dict(submission.manual_assertions or {})
+    machine_keys = O.machine_keys(assertions)
+    human_keys = O.human_keys(assertions)
+
+    trespass = machine_keys & set(manual)
+    if trespass:
+        raise AssertionScopeError(
+            f"manual_assertions 携带了机器可验断言的键 {sorted(trespass)} —— "
+            f"这些必须由脚本自动判定,不落人手。intern 只能勾选人工断言 "
+            f"{sorted(human_keys)}")
+
+    # 1. 人工勾选断言: 只取 HUMAN 断言拥有的键(其余无关键忽略,不污染 ctx)。
+    ctx = {k: manual[k] for k in human_keys if k in manual}
+    # 2. 机器可验断言的权威输入(人碰不到)。
+    ctx["artifact_path"] = submission.artifact_path
+    ctx["log_events"] = log_facts.get("events", [])
+    # 3. 从产物/日志派生的机器上下文(MVP: 无自动提取器 -> 缺键 -> equals 判 False)。
+    for k, v in (submission.machine_ctx or {}).items():
+        ctx.setdefault(k, v)
     return ctx
 
 
@@ -175,9 +212,11 @@ class SubmissionTranslator:
                 f"GATE for an unregistered competitor") from e
         gate = gate_for(competitor, spec)
 
-        # 2. Objective assertions — machine + human, one runner, split by ctx.
+        # 2. Objective assertions — machine + human, one runner, split BY SOURCE.
+        #    _build_ctx enforces the #44 guard: intern-ticked flags feed only
+        #    HUMAN assertions; MACHINE assertions read authoritative refs only.
         log_facts = self.log_parser.parse(submission.log_bundle_path)
-        ctx = _build_ctx(submission, log_facts)
+        ctx = _build_ctx(submission, log_facts, assertions)
         obj = O.run_assertions(assertions, ctx)
 
         # 3. Cost — folded from the PARSED log facts via the A3 price table.

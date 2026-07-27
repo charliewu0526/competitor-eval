@@ -10,6 +10,7 @@ Run:  uvicorn server.app:app --port 8600   (from repo root)
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 from fastapi import (FastAPI, HTTPException, Header, Depends, UploadFile, File,
                      Form)
@@ -26,11 +27,18 @@ from pipeline import submissions as SUB
 from pipeline import artifact_store as ART
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
+# CORS 白名单: 默认只放本地前端 (Vite 5273 / 常见 3000)。生产用 env 明列前端域名,
+# 不再 allow_origins=["*"] —— 配合 Bearer 写端点, 通配来源会放大跨站写风险。
+import os as _os
+_CORS_ORIGINS = [o.strip() for o in _os.environ.get(
+    "CORS_ALLOWED_ORIGINS",
+    "http://127.0.0.1:5273,http://localhost:5273,"
+    "http://127.0.0.1:3000,http://localhost:3000").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_CORS_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 _DB_PATH = None  # default board/competitor_eval.db
@@ -509,13 +517,23 @@ async def submit_submission(
 
 
 # --- writes ---------------------------------------------------------------
+# 复核类写端点: 篡改评测结论 / 重建抽查队列 / 写入人工裁定, 都会污染系统可信度,
+# 故必须鉴权 (此前裸奔无守卫, 匿名可写 — 已修)。judgment/verdict 是复核动作
+# (reviewer 起), rebuild 是抽查队列维护 (owner 独占)。
 class JudgmentIn(BaseModel):
-    product_judgment: str | None = None
-    final_category: str | None = None
+    # \u679a\u4e3e\u503c\u4e0e findings.PRODUCT_JUDGMENT_VALUES / FINAL_CATEGORY_VALUES \u5bf9\u9f50\n    # (\u975e\u6cd5\u503c pydantic \u5c42\u5373 422, \u4e0d\u518d\u5199\u810f\u6570\u636e\u5165\u5e93)\u3002\n    product_judgment: Literal[
+        "\u5fc5\u987b\u8865\u9f50", "\u503c\u5f97\u501f\u9274", "\u89c2\u5bdf\u4e2d", "\u4e0d\u9002\u5408Violoop"] | None = None
+    final_category: Literal[
+        "bug", "feature-gap", "experience-borrow", "honesty-alert",
+        "not-actionable"] | None = None
 
 
 @app.post("/api/findings/{finding_id}/judgment")
-def set_judgment(finding_id: int, body: JudgmentIn):
+def set_judgment(finding_id: int, body: JudgmentIn, user=Depends(current_user)):
+    try:
+        RBAC.require(user, "review")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
     store.set_judgment(_con(), finding_id,
                        product_judgment=body.product_judgment,
                        final_category=body.final_category)
@@ -523,19 +541,27 @@ def set_judgment(finding_id: int, body: JudgmentIn):
 
 
 @app.post("/api/spotcheck/rebuild")
-def rebuild_spotcheck():
+def rebuild_spotcheck(user=Depends(current_user)):
+    try:
+        RBAC.require(user, "manage_task_catalog")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
     return SP.build_queue(_con())
 
 
 class VerdictIn(BaseModel):
-    status: str           # ok | anomaly
-    checked_by: str = "PM"
+    status: Literal["ok", "anomaly"]     # 非法值 -> pydantic 422, 不再穿透成 500
     verdict_note: str | None = None
 
 
 @app.post("/api/spotcheck/{queue_id}/verdict")
-def submit_verdict(queue_id: int, body: VerdictIn):
-    kwargs = dict(status=body.status, checked_by=body.checked_by,
+def submit_verdict(queue_id: int, body: VerdictIn, user=Depends(current_user)):
+    try:
+        RBAC.require(user, "review")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    # checked_by 绑定认证身份, 不从请求体取 (此前客户端可伪造 "PM" 签字 — 已修)。
+    kwargs = dict(status=body.status, checked_by=user["id"],
                   verdict_note=body.verdict_note)
     if body.status == "anomaly":
         kwargs.update(role="reviewer", name="panel")

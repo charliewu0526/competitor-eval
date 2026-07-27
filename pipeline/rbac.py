@@ -65,9 +65,15 @@ def require(user: dict | None, action: str) -> dict:
 
     user = whoami 出来的 {id,name,role} 或 None (未登录)。
     未登录 -> PermissionDenied (Web -> 403; 未认证细分留给上层, 这里统一拒)。
+    action 拼错 (未登记) -> 也翻成 PermissionDenied 而非 ValueError, 让 Web 层统一
+    回 403 而不是 500 暴露内部错误 (体检 BUG-11)。
     """
     role = (user or {}).get("role")
-    if not can(role, action):
+    try:
+        allowed = can(role, action)
+    except ValueError:
+        raise PermissionDenied(f"未知操作类型: {action!r}")
+    if not allowed:
         who = role or "匿名"
         raise PermissionDenied(f"角色 {who} 无权执行 {action!r}")
     return user  # type: ignore[return-value]
@@ -88,5 +94,12 @@ def promote(con, *, actor: dict | None, target_user_id: str,
     target = store.get_user(con, target_user_id)
     if target is None:
         raise ValueError(f"用户不存在: {target_user_id!r}")
+    # 末位 owner 保护: 降走系统最后一个 owner 会导致谁都签发不了链接、提升不了人,
+    # 系统被永久锁死 (体检 BUG-10)。降权前确保还留有其他 owner。
+    if target["role"] == "owner" and new_role != "owner":
+        other_owners = [u for u in store.all_users(con)
+                        if u["role"] == "owner" and u["id"] != target_user_id]
+        if not other_owners:
+            raise PermissionDenied("系统至少需保留一位 owner, 不能降走最后一个")
     store.set_user_role(con, target_user_id, new_role)
     return store.get_user(con, target_user_id)

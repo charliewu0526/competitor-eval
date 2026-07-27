@@ -67,9 +67,10 @@ class SplitStatements(unittest.TestCase):
                   "spot_check_queue", "users", "assignments",
                   "submissions", "methods"):
             self.assertIn(f"table if not exists {t}", blob, t)
-        # 每条都应含 CREATE TABLE, 无空片
+        # 每条都应是有效 DDL (CREATE TABLE 或 CREATE INDEX), 无空片/纯注释残留
         for s in stmts:
-            self.assertIn("CREATE TABLE", s.upper())
+            up = s.upper()
+            self.assertTrue("CREATE TABLE" in up or "CREATE INDEX" in up, s)
 
     def test_comment_only_chunk_dropped(self):
         self.assertEqual(db.split_statements("-- just a comment\n"), [])

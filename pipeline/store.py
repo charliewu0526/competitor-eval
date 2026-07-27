@@ -135,6 +135,9 @@ CREATE TABLE IF NOT EXISTS assignments (
     claimed_ts           REAL,
     created_ts           REAL
 );
+-- open_assignments / assignments_by_status / reclaim_stale 都按 status 过滤,
+-- 累积到数万行时全表扫描代价显现 (体检 L3)。
+CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
 
 CREATE TABLE IF NOT EXISTS submissions (
     id                   TEXT PRIMARY KEY,   -- 一个产品一次提交的一整包
@@ -142,7 +145,8 @@ CREATE TABLE IF NOT EXISTS submissions (
     product              TEXT NOT NULL,
     artifact_path        TEXT,               -- 原始产物目录路径引用(不入库)
     log_bundle_path      TEXT,               -- 执行日志包路径引用(必传, 不入库)
-    manual_assertions_json TEXT,             -- 只能人看的客观断言人工勾选
+    manual_assertions_json TEXT,             -- 只能人看的客观断言人工勾选 (HUMAN)
+    machine_ctx_json     TEXT,               -- 服务端从产物/日志派生的机器断言输入 (MACHINE, #44 人碰不到)
     claimed_success      INTEGER,            -- 0/1/NULL: 该产品自称完成没(喂 H1)
     submitted_by         TEXT,               -- users.id
     submitted_ts         REAL,
@@ -247,6 +251,9 @@ def connect(db_path: str | pathlib.Path | None = None,
     if _db.dialect_for(resolved_url) == "postgres":
         con = _db.connect_url(resolved_url)
         con.executescript(_db.translate_ddl(SCHEMA, "postgres"))
+        # PG 的 DDL 是事务性的: pg8000 默认 autocommit=False, 不 commit 则连接关闭时
+        # 建表事务回滚 -> 表永不落地 (首个只读请求就会踩到, 见体检 H2)。故显式提交。
+        con.commit()
         # PG 建表即完整, 无需 SQLite 的 ALTER 回填(_migrate 走 PRAGMA, SQLite-only)。
         return con
     p = pathlib.Path(db_path) if db_path else DEFAULT_DB
@@ -556,7 +563,7 @@ def claim_assignment(con, assignment_id: str, user_id: str) -> bool:
             "SELECT status FROM assignments WHERE id=? FOR UPDATE",
             (assignment_id,)).fetchone()
         if not row or row["status"] != "open":
-            con.commit()
+            con.rollback()   # 领取失败=什么都没做, 回滚行锁 (连接池复用下才安全)
             return False
         con.execute(
             "UPDATE assignments SET status='claimed', claimed_by=?, claimed_ts=? "
@@ -571,15 +578,25 @@ def claim_assignment(con, assignment_id: str, user_id: str) -> bool:
     return cur.rowcount == 1
 
 
-def set_assignment_status(con, assignment_id: str, status: str) -> None:
-    """submitted / abandoned (放弃或超时回到清单, story 12). Abandon reopens it."""
+def set_assignment_status(con, assignment_id: str, status: str,
+                          *, expected_from: str | None = None) -> bool:
+    """submitted / abandoned (放弃或超时回到清单, story 12). Abandon reopens it.
+
+    expected_from 给出时, 只在当前 status 恰为该值时才翻转 (带条件原子 UPDATE),
+    返回是否命中。这堵住 submit/abandon 的读-检-写 TOCTOU: 例如 reclaim_stale 刚把
+    一行 abandon 回 open, 与此同时 submit 若无守卫会把它错误推进 submitted; 有守卫则
+    submit 的 UPDATE 命中 0 行 -> 调用方据此报冲突, 不会覆盖已被回收的状态。
+    """
+    guard = " AND status=?" if expected_from is not None else ""
+    tail = (assignment_id,) if expected_from is None else (assignment_id, expected_from)
     if status == "abandoned":
-        con.execute("UPDATE assignments SET status='open', claimed_by=NULL, "
-                    "claimed_ts=NULL WHERE id=?", (assignment_id,))
+        cur = con.execute("UPDATE assignments SET status='open', claimed_by=NULL, "
+                          "claimed_ts=NULL WHERE id=?" + guard, tail)
     else:
-        con.execute("UPDATE assignments SET status=? WHERE id=?",
-                    (status, assignment_id))
+        cur = con.execute("UPDATE assignments SET status=? WHERE id=?" + guard,
+                          (status, *tail))
     con.commit()
+    return cur.rowcount == 1
 
 
 def upsert_submission(con, s: dict) -> int | str:
@@ -588,14 +605,15 @@ def upsert_submission(con, s: dict) -> int | str:
     (assignment_id, product): 一 Assignment 每产品一份."""
     con.execute("""
         INSERT INTO submissions (id, assignment_id, product, artifact_path,
-            log_bundle_path, manual_assertions_json, claimed_success,
-            submitted_by, submitted_ts, transcript_excerpt,
+            log_bundle_path, manual_assertions_json, machine_ctx_json,
+            claimed_success, submitted_by, submitted_ts, transcript_excerpt,
             competitor_version, tested_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(assignment_id, product) DO UPDATE SET
             artifact_path=excluded.artifact_path,
             log_bundle_path=excluded.log_bundle_path,
             manual_assertions_json=excluded.manual_assertions_json,
+            machine_ctx_json=excluded.machine_ctx_json,
             claimed_success=excluded.claimed_success,
             submitted_by=excluded.submitted_by, submitted_ts=excluded.submitted_ts,
             transcript_excerpt=excluded.transcript_excerpt,
@@ -604,6 +622,7 @@ def upsert_submission(con, s: dict) -> int | str:
     """, (s["id"], s["assignment_id"], s["product"], s.get("artifact_path"),
           s.get("log_bundle_path"),
           json.dumps(s.get("manual_assertions"), ensure_ascii=False),
+          json.dumps(s.get("machine_ctx"), ensure_ascii=False),
           _b(s.get("claimed_success")), s.get("submitted_by"),
           s.get("submitted_ts", time.time()), s.get("transcript_excerpt"),
           s.get("competitor_version"), s.get("tested_at")))
@@ -623,6 +642,10 @@ def submissions_for(con, assignment_id: str) -> list[dict]:
             d["manual_assertions"] = json.loads(d.get("manual_assertions_json") or "null")
         except Exception:
             d["manual_assertions"] = None
+        try:
+            d["machine_ctx"] = json.loads(d.get("machine_ctx_json") or "null")
+        except Exception:
+            d["machine_ctx"] = None
         # SQLite 存 0/1/NULL -> 还原成 bool|None(claimed_success 喂 H1 诚实度轴,
         # 类型必须真为布尔, 否则 `is True` 判定失效)。
         cs = d.get("claimed_success")

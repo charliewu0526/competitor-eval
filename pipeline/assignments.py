@@ -154,7 +154,11 @@ def submit(con, assignment_id: str, *, by: str | None = None) -> dict:
     if by is not None and a.get("claimed_by") != by:
         raise AssignmentError(
             f"只有领取者可提交: {assignment_id!r} 归 {a.get('claimed_by')!r}, 非 {by!r}")
-    store.set_assignment_status(con, assignment_id, "submitted")
+    # 带守卫原子写: 仅当仍为 claimed 才推进, 堵住与 reclaim_stale 的 TOCTOU。
+    if not store.set_assignment_status(con, assignment_id, "submitted",
+                                       expected_from="claimed"):
+        raise IllegalTransition(
+            f"提交失败: {assignment_id!r} 已不在 claimed (可能被超时回收或并发改动)")
     return store.get_assignment(con, assignment_id)
 
 
@@ -170,7 +174,11 @@ def abandon(con, assignment_id: str, *, by: str | None = None) -> dict:
     if by is not None and a.get("claimed_by") != by:
         raise AssignmentError(
             f"只有领取者可放弃: {assignment_id!r} 归 {a.get('claimed_by')!r}, 非 {by!r}")
-    store.set_assignment_status(con, assignment_id, "abandoned")
+    # 带守卫原子写: 仅当仍为 claimed 才回收, 避免覆盖并发下已变更的状态。
+    if not store.set_assignment_status(con, assignment_id, "abandoned",
+                                       expected_from="claimed"):
+        raise IllegalTransition(
+            f"放弃失败: {assignment_id!r} 已不在 claimed (可能被并发改动)")
     return store.get_assignment(con, assignment_id)
 
 
@@ -189,6 +197,9 @@ def reclaim_stale(con, *, ttl_seconds: float = DEFAULT_CLAIM_TTL_SECONDS,
         if cts is None:
             continue
         if t - cts > ttl_seconds:
-            store.set_assignment_status(con, a["id"], "abandoned")
-            reclaimed.append(a["id"])
+            # 带守卫: 仅当此刻仍为 claimed 才回收。若用户已在这一瞬提交 (claimed->
+            # submitted), UPDATE 命中 0 行, 不会把已交付的作业错误重置回 open (H1 第二路径)。
+            if store.set_assignment_status(con, a["id"], "abandoned",
+                                           expected_from="claimed"):
+                reclaimed.append(a["id"])
     return reclaimed

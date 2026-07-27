@@ -14,10 +14,19 @@
 """
 from __future__ import annotations
 
+import os
 import secrets
 import time
 
 from pipeline import store
+
+
+# 令牌默认寿命 (安全护栏, env 可覆盖). 永不过期的令牌一旦泄露就是永久后门,
+# 故给会话/链接都设默认 TTL; 显式传 ttl_seconds 仍可覆盖 (含 <=0 表示永久, 见下)。
+DEFAULT_SESSION_TTL_SECONDS = float(
+    os.environ.get("SESSION_TTL_SECONDS", 7 * 24 * 3600))   # 7 天
+DEFAULT_INVITE_TTL_SECONDS = float(
+    os.environ.get("INVITE_TTL_SECONDS", 72 * 3600))         # 72 小时
 
 
 class AuthError(Exception):
@@ -27,6 +36,15 @@ class AuthError(Exception):
 def _token(nbytes: int = 24) -> str:
     """URL-safe 随机令牌 (不可猜)。链接凭证与会话令牌共用。"""
     return secrets.token_urlsafe(nbytes)
+
+
+def _expiry(ts: float, ttl_seconds: float | None, default_ttl: float) -> float | None:
+    """算过期时间戳。ttl_seconds=None -> 用默认 TTL; ttl_seconds<=0 -> 永不过期
+    (显式关闭, 供内部长期令牌等特例); 否则 ts+ttl。"""
+    ttl = default_ttl if ttl_seconds is None else ttl_seconds
+    if ttl <= 0:
+        return None
+    return ts + ttl
 
 
 # --- PM 侧: 签发私发注册链接 --------------------------------------------
@@ -41,7 +59,7 @@ def issue_invite(con, *, created_by: str | None = None, note: str | None = None,
     store.create_invite(con, {
         "token": token, "note": note, "created_by": created_by,
         "created_ts": ts,
-        "expires_ts": (ts + ttl_seconds) if ttl_seconds else None,
+        "expires_ts": _expiry(ts, ttl_seconds, DEFAULT_INVITE_TTL_SECONDS),
     })
     return store.get_invite(con, token)
 
@@ -81,7 +99,7 @@ def _issue_session(con, user_id: str, *, ttl_seconds: float | None = None,
     token = _token()
     store.create_session(con, {
         "token": token, "user_id": user_id, "created_ts": ts,
-        "expires_ts": (ts + ttl_seconds) if ttl_seconds else None,
+        "expires_ts": _expiry(ts, ttl_seconds, DEFAULT_SESSION_TTL_SECONDS),
     })
     return token
 
