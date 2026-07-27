@@ -79,4 +79,34 @@ export const rebuildSpotcheck = () =>
 export const postVerdict = (id, body) =>
   api.post(`/spotcheck/${id}/verdict`, body).then((r) => r.data);
 
+// --- MR-6/7 实习生工作流:领题 / 提交 ---------------------------------
+export const getAssignments = () => api.get("/assignments").then((r) => r.data);
+export const materializeAssignment = (taskId) =>
+  api.post("/assignments/materialize", { task_id: taskId }).then((r) => r.data);
+export const claimAssignment = (id) =>
+  api.post(`/assignments/${encodeURIComponent(id)}/claim`).then((r) => r.data);
+export const abandonAssignment = (id) =>
+  api.post(`/assignments/${encodeURIComponent(id)}/abandon`).then((r) => r.data);
+export const submitAssignment = (id) =>
+  api.post(`/assignments/${encodeURIComponent(id)}/submit`).then((r) => r.data);
+export const getSubmissionProgress = (id) =>
+  api.get(`/assignments/${encodeURIComponent(id)}/submissions`).then((r) => r.data);
+// 提交一份产品交付(multipart:产物 + 日志包 + 元数据)。
+export const postSubmission = (id, formData) =>
+  api.post(`/assignments/${encodeURIComponent(id)}/submissions`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  }).then((r) => r.data);
+
+// --- MR-14 方法沉淀:初稿 → 把关 → 导出 -------------------------------
+export const getMethods = (status) =>
+  api.get("/methods", { params: status ? { status } : {} }).then((r) => r.data);
+export const createMethod = (body) =>
+  api.post("/methods", body).then((r) => r.data);
+export const approveMethod = (id) =>
+  api.post(`/methods/${id}/approve`).then((r) => r.data);
+export const previewMethod = (id) =>
+  api.get(`/methods/${id}/preview`).then((r) => r.data);
+export const exportMethod = (id) =>
+  api.post(`/methods/${id}/export`).then((r) => r.data);
+
 export default api;

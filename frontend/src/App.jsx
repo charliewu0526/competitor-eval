@@ -23,12 +23,16 @@ import GapReport from "./pages/GapReport.jsx";
 import Probes from "./pages/Probes.jsx";
 import SpotCheck from "./pages/SpotCheck.jsx";
 import Authorizations from "./pages/Authorizations.jsx";
+import Assignments from "./pages/Assignments.jsx";
+import Methods from "./pages/Methods.jsx";
 
 const { Header, Sider, Content } = Layout;
 
 const NAV = [
   { key: "/", icon: <DashboardOutlined />, label: "总览" },
   { key: "/catalog", icon: <UnorderedListOutlined />, label: "任务清单" },
+  { key: "/assignments", icon: <SolutionOutlined />, label: "我的任务" },
+  { key: "/methods", icon: <DeploymentUnitOutlined />, label: "方法沉淀" },
   { key: "/leaderboard", icon: <TrophyOutlined />, label: "排行榜" },
   { key: "/domain-board", icon: <AppstoreOutlined />, label: "分维度榜单" },
   { key: "/matrix", icon: <TableOutlined />, label: "按题矩阵" },
@@ -100,6 +104,8 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/catalog" element={<TaskCatalog />} />
+              <Route path="/assignments" element={<Assignments />} />
+              <Route path="/methods" element={<Methods />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/domain-board" element={<DomainBoard />} />
               <Route path="/matrix" element={<Matrix />} />
