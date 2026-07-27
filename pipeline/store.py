@@ -518,6 +518,23 @@ def open_assignments(con) -> list[dict]:
         "SELECT * FROM assignments WHERE status='open' ORDER BY created_ts, id")]
 
 
+def assignments_by_status(con, status: str) -> list[dict]:
+    """List assignments in a given lifecycle state (open|claimed|submitted|abandoned).
+
+    Used by the state-machine policy layer to sweep `claimed` rows for timeout
+    reclaim (#42 AC: 超时未交回到 open)."""
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM assignments WHERE status=? ORDER BY created_ts, id",
+        (status,))]
+
+
+def assignments_for_user(con, user_id: str) -> list[dict]:
+    """Assignments currently held by user_id (claimed/submitted 尚未放弃的活)."""
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM assignments WHERE claimed_by=? ORDER BY claimed_ts, id",
+        (user_id,))]
+
+
 def claim_assignment(con, assignment_id: str, user_id: str) -> bool:
     """并发领取控制 (story 10): atomically claim an OPEN assignment for user_id.
 

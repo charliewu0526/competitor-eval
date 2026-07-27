@@ -18,6 +18,7 @@ from pipeline import probe as PROBE
 from pipeline import catalog as CATALOG
 from pipeline import auth as AUTH
 from pipeline import rbac as RBAC
+from pipeline import assignments as ASSIGN
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 app.add_middleware(
@@ -291,6 +292,120 @@ def promote_user(user_id: str, body: PromoteIn, user=Depends(current_user)):
         raise HTTPException(400, str(e))
     return {"id": updated["id"], "name": updated.get("name"),
             "role": updated["role"]}
+
+
+# === MR-6 (#42) 并发领取 + Assignment 状态机 (ADR-0015) ===================
+def _assignment_view(a: dict) -> dict:
+    """对外投影: 只暴露状态机需要的字段 (含参赛产品集)。"""
+    return {
+        "id": a["id"],
+        "task_id": a["task_id"],
+        "products": a.get("products"),
+        "status": a["status"],
+        "claimed_by": a.get("claimed_by"),
+        "claimed_ts": a.get("claimed_ts"),
+    }
+
+
+@app.get("/api/assignments")
+def list_open_assignments(user=Depends(current_user)):
+    """列出可领取 (open) 的 Assignment。任意已登录用户可看 (intern 起)。"""
+    try:
+        RBAC.require(user, "claim_assignment")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    con = _con()
+    return [_assignment_view(store.get_assignment(con, a["id"]))
+            for a in store.open_assignments(con)]
+
+
+class MaterializeIn(BaseModel):
+    task_id: str
+
+
+@app.post("/api/assignments/materialize")
+def materialize_assignment(body: MaterializeIn, user=Depends(current_user)):
+    """把清单里的一道题铸成可领取的 Assignment (含同域参赛产品集, ADR-0015)。
+
+    维护任务清单属 owner 独占 (story 5, manage_task_catalog)。幂等: 同题复用原单。
+    """
+    try:
+        RBAC.require(user, "manage_task_catalog")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    try:
+        a = ASSIGN.materialize_for_task(_con(), body.task_id)
+    except ASSIGN.AssignmentError as e:
+        raise HTTPException(400, str(e))
+    return _assignment_view(a)
+
+
+@app.post("/api/assignments/{assignment_id}/claim")
+def claim_assignment(assignment_id: str, user=Depends(current_user)):
+    """intern 领取一道 Assignment (整组对打一人一次性, ADR-0015)。
+
+    并发领取: 两人抢同一道只一个成功 (store 原子锁), 落败方见 409 已锁定。
+    """
+    try:
+        RBAC.require(user, "claim_assignment")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    con = _con()
+    try:
+        a = ASSIGN.claim(con, assignment_id, user["id"])
+    except ASSIGN.IllegalTransition as e:
+        raise HTTPException(409, str(e))     # 已被别人锁定 / 非 open
+    except ASSIGN.AssignmentError as e:
+        raise HTTPException(404, str(e))
+    return _assignment_view(a)
+
+
+@app.post("/api/assignments/{assignment_id}/abandon")
+def abandon_assignment(assignment_id: str, user=Depends(current_user)):
+    """放弃已领取的 Assignment -> 回到清单可被再领 (story 12)。仅持有者可放弃。"""
+    try:
+        RBAC.require(user, "claim_assignment")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    con = _con()
+    try:
+        a = ASSIGN.abandon(con, assignment_id, by=user["id"])
+    except ASSIGN.IllegalTransition as e:
+        raise HTTPException(409, str(e))
+    except ASSIGN.AssignmentError as e:
+        # 不存在 -> 404; 非持有者 -> 403
+        code = 404 if "不存在" in str(e) else 403
+        raise HTTPException(code, str(e))
+    return _assignment_view(a)
+
+
+@app.post("/api/assignments/{assignment_id}/submit")
+def submit_assignment(assignment_id: str, user=Depends(current_user)):
+    """把已领取的 Assignment 标记 submitted (claimed -> submitted)。仅持有者可交。"""
+    try:
+        RBAC.require(user, "submit")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    con = _con()
+    try:
+        a = ASSIGN.submit(con, assignment_id, by=user["id"])
+    except ASSIGN.IllegalTransition as e:
+        raise HTTPException(409, str(e))
+    except ASSIGN.AssignmentError as e:
+        code = 404 if "不存在" in str(e) else 403
+        raise HTTPException(code, str(e))
+    return _assignment_view(a)
+
+
+@app.post("/api/assignments/reclaim-stale")
+def reclaim_stale_assignments(user=Depends(current_user)):
+    """扫描领了太久没交的 Assignment 扫回 open (超时回收, story 12)。owner 触发。"""
+    try:
+        RBAC.require(user, "manage_task_catalog")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    reclaimed = ASSIGN.reclaim_stale(_con())
+    return {"reclaimed": reclaimed, "count": len(reclaimed)}
 
 
 # --- writes ---------------------------------------------------------------
