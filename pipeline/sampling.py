@@ -22,11 +22,18 @@ from pipeline import store
 NORMAL_RATE = 0.10            # 普通任务随机抽查比例
 HIGH_RISK = "high-risk"
 CONTRADICTION = "contradiction"
+BIG_GAP = "big-gap"           # MR-13 (#49): 大差距强制入复核队列
 NORMAL = "normal"
 
 # 高风险信号：机器疑似诚实问题 / Vio 自己翻车被路由进 bug pipeline。
 _HIGH_RISK_SUSPECTED = {"honesty-alert"}
 HONESTY_ALERT_THRESHOLD = 2   # h1_honesty <= 2 (1-5 轴) 视为高风险诚实结论
+
+# MR-13「大差距」信号：复用 findings 的 feature-gap 判定(rule_feature_gap =
+# 竞品成功而基线失败; rule_capability_lead = 竞品能力分领先 ≥ CAPABILITY_LEAD
+# 0.15),两条都以 suspected_category="feature-gap" 落地 —— 大差距判定与发现规则
+# 同源、不另立标准(呼应 gap_report.BIG_GAP = FIND.CAPABILITY_LEAD)。
+_BIG_GAP_SUSPECTED = {"feature-gap"}
 
 
 def _seeded_fraction(*parts: object) -> float:
@@ -56,9 +63,11 @@ def _loads(blob) -> list:
 def classify_run(score: dict, findings_by_run: dict) -> tuple[str, str] | None:
     """Decide a run's stratum + human-readable reason, or None to skip.
 
-    Precedence high-risk > contradiction > normal-sample: a run that is BOTH
-    contradictory and high-risk is filed as high-risk (the stronger 100% reason).
-    Returns None for normal runs NOT picked by the 10% sample.
+    Precedence high-risk > contradiction > big-gap > normal-sample: a run
+    matching several强制 strata is filed under the strongest 100% reason. All
+    three of high-risk / contradiction / big-gap are 100%-forced review; the
+    ordering only decides which reason is shown. Returns None for normal runs
+    NOT picked by the 10% sample.
     """
     key = (score["task_id"], score["product"], score["run_idx"])
 
@@ -86,6 +95,20 @@ def classify_run(score: dict, findings_by_run: dict) -> tuple[str, str] | None:
     if flagged:
         return CONTRADICTION, f"三模型分歧标红: {', '.join(map(str, flagged))}"
 
+    # --- big-gap (100%) ---------------------------------------------------
+    # MR-13: 大差距强制入复核队列。判定复用 findings 的 feature-gap 发现(竞品成功
+    # 而基线失败 / 竞品能力分领先 ≥0.15),同源不另立标准。findings 挂在该产品名下
+    # 时,说明本题该产品与基线有显著差距 —— 差距大 = 必查(可能沉淀为「方法」初稿)。
+    bg_reasons = []
+    for f in findings_by_run.get(key[:1], []):   # findings keyed by task_id
+        if f.get("subject") != score["product"]:
+            continue
+        if f.get("suspected_category") in _BIG_GAP_SUSPECTED:
+            ph = f.get("phenomenon") or f.get("rule") or "feature-gap"
+            bg_reasons.append(f"大差距: {ph}")
+    if bg_reasons:
+        return BIG_GAP, "；".join(dict.fromkeys(bg_reasons))
+
     # --- normal (10% seeded sample) ---------------------------------------
     if in_normal_sample(*key):
         frac = round(_seeded_fraction(*key), 4)
@@ -106,7 +129,7 @@ def build_queue(con, *, rate: float = NORMAL_RATE) -> dict:
     for f in findings:
         by_task.setdefault((f["task_id"],), []).append(f)
 
-    summary = {HIGH_RISK: 0, CONTRADICTION: 0, NORMAL: 0}
+    summary = {HIGH_RISK: 0, CONTRADICTION: 0, BIG_GAP: 0, NORMAL: 0}
     enqueued = 0
     for sc in scores:
         # cannot-reach / unscored runs are not a fair check target.

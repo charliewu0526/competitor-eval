@@ -113,6 +113,10 @@ CREATE TABLE IF NOT EXISTS spot_check_queue (
     verdict_note         TEXT,
     enqueued_ts          REAL,
     checked_ts           REAL,
+    -- MR-13 (#49) 职责分离 + 重校准 provenance:
+    assigned_reviewer    TEXT,                -- users.id 被指派复核者(职责分离: != 执行者)
+    recalibrated_by      TEXT,                -- 触发重校准的 owner users.id (仅 owner 可触发)
+    recalibrated_ts      REAL,
     UNIQUE (task_id, product, run_idx)       -- 重建队列更新分层，不覆盖人工结论
 );
 
@@ -449,6 +453,29 @@ def record_spot_check(con: sqlite3.Connection, queue_id: int, *, status: str,
     con.commit()
 
 
+def get_spot_check(con: sqlite3.Connection, queue_id: int) -> dict | None:
+    row = con.execute("SELECT * FROM spot_check_queue WHERE id=?",
+                      (queue_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def assign_reviewer(con: sqlite3.Connection, queue_id: int,
+                    reviewer_id: str | None) -> None:
+    """MR-13: bind (or clear) the reviewer指派给某复核项 (职责分离标记)."""
+    con.execute("UPDATE spot_check_queue SET assigned_reviewer=? WHERE id=?",
+                (reviewer_id, queue_id))
+    con.commit()
+
+
+def record_recalibration(con: sqlite3.Connection, queue_id: int, *,
+                         by: str) -> None:
+    """MR-13: stamp who (owner) triggered重校准 from this 复核项, and when."""
+    con.execute("""UPDATE spot_check_queue SET recalibrated_by=?,
+                   recalibrated_ts=? WHERE id=?""",
+                (by, time.time(), queue_id))
+    con.commit()
+
+
 def spot_check_queue(con: sqlite3.Connection,
                      status: str | None = None) -> list[dict]:
     """List queue items, optionally filtered by status. Ordered so 100%
@@ -459,7 +486,8 @@ def spot_check_queue(con: sqlite3.Connection,
         sql += " WHERE status=?"
         args = (status,)
     sql += (" ORDER BY CASE stratum WHEN 'high-risk' THEN 0 "
-            "WHEN 'contradiction' THEN 1 ELSE 2 END, id")
+            "WHEN 'contradiction' THEN 1 WHEN 'big-gap' THEN 2 "
+            "ELSE 3 END, id")
     return [dict(r) for r in con.execute(sql, args)]
 
 
@@ -630,6 +658,22 @@ def upsert_submission(con, s: dict) -> int | str:
     row = con.execute("SELECT id FROM submissions WHERE assignment_id=? AND product=?",
                       (s["assignment_id"], s["product"])).fetchone()
     return row["id"]
+
+
+def executors_for_task_product(con, task_id: str, product: str) -> list[str]:
+    """MR-13 (#49) 职责分离: who (users.id) EXECUTED a given (task, product).
+
+    Joins submissions -> assignments on assignment_id, matching the queue item's
+    task_id + product. The submitted_by of any such Submission is an执行者 of
+    that run —— such a user must NOT be指派复核 the same work (不自己批自己作业).
+    Returns distinct非空 user ids.
+    """
+    rows = con.execute(
+        """SELECT DISTINCT s.submitted_by
+             FROM submissions s JOIN assignments a ON s.assignment_id = a.id
+            WHERE a.task_id = ? AND s.product = ? AND s.submitted_by IS NOT NULL""",
+        (task_id, product)).fetchall()
+    return [r["submitted_by"] for r in rows if r["submitted_by"]]
 
 
 def submissions_for(con, assignment_id: str) -> list[dict]:

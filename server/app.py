@@ -26,6 +26,7 @@ from pipeline import rbac as RBAC
 from pipeline import assignments as ASSIGN
 from pipeline import submissions as SUB
 from pipeline import artifact_store as ART
+from pipeline import review_queue as RQ
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 # CORS 白名单: 默认只放本地前端 (Vite 5273 / 常见 3000)。生产用 env 明列前端域名,
@@ -536,8 +537,10 @@ async def submit_submission(
 # 故必须鉴权 (此前裸奔无守卫, 匿名可写 — 已修)。judgment/verdict 是复核动作
 # (reviewer 起), rebuild 是抽查队列维护 (owner 独占)。
 class JudgmentIn(BaseModel):
-    # \u679a\u4e3e\u503c\u4e0e findings.PRODUCT_JUDGMENT_VALUES / FINAL_CATEGORY_VALUES \u5bf9\u9f50\n    # (\u975e\u6cd5\u503c pydantic \u5c42\u5373 422, \u4e0d\u518d\u5199\u810f\u6570\u636e\u5165\u5e93)\u3002\n    product_judgment: Literal[
-        "\u5fc5\u987b\u8865\u9f50", "\u503c\u5f97\u501f\u9274", "\u89c2\u5bdf\u4e2d", "\u4e0d\u9002\u5408Violoop"] | None = None
+    # 枚举值与 findings.PRODUCT_JUDGMENT_VALUES / FINAL_CATEGORY_VALUES 对齐
+    # (非法值 pydantic 层即 422, 不再写脏数据入库)。
+    product_judgment: Literal[
+        "必须补齐", "值得借鉴", "观察中", "不适合Violoop"] | None = None
     final_category: Literal[
         "bug", "feature-gap", "experience-borrow", "honesty-alert",
         "not-actionable"] | None = None
@@ -582,3 +585,73 @@ def submit_verdict(queue_id: int, body: VerdictIn, user=Depends(current_user)):
         kwargs.update(role="reviewer", name="panel")
     SP.submit_verdict(_con(), queue_id, **kwargs)
     return {"ok": True, "id": queue_id}
+
+
+# === MR-13 (#49) 人工复核队列 + 职责分离 + 重校准 (ADR-0014) ================
+class AssignReviewerIn(BaseModel):
+    reviewer_id: str
+
+
+@app.post("/api/spotcheck/{queue_id}/assign")
+def assign_reviewer(queue_id: int, body: AssignReviewerIn,
+                    user=Depends(current_user)):
+    """把一条复核项指派给某 reviewer (职责分离守卫, AC2)。
+
+    需 'review' 权限 (intern -> 403); 被指派者不能是该 (task,product) 的执行者
+    (不自己批自己作业 -> 409)。
+    """
+    try:
+        item = RQ.assign_reviewer(_con(), queue_id,
+                                  reviewer=user, reviewer_id=body.reviewer_id)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except RQ.SeparationOfDuties as e:
+        raise HTTPException(409, str(e))     # 职责分离冲突
+    except RQ.ReviewError as e:
+        raise HTTPException(404, str(e))
+    return item
+
+
+class ReviewVerdictIn(BaseModel):
+    verdict: Literal["reasonable", "problematic"]   # 有道理 / 有问题
+    note: str | None = None
+
+
+@app.post("/api/spotcheck/{queue_id}/review")
+def review_verdict(queue_id: int, body: ReviewVerdictIn,
+                   user=Depends(current_user)):
+    """reviewer/PM 对复核项下「有道理」/「有问题」结论 (AC3)。不触发校准。
+
+    checked_by 绑定认证身份 (防伪造签字)。intern -> 403; 已指派他人且非 owner
+    下结论 -> 409。
+    """
+    try:
+        item = RQ.submit_verdict(_con(), queue_id, reviewer=user,
+                                 verdict=body.verdict, note=body.note)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except RQ.SeparationOfDuties as e:
+        raise HTTPException(409, str(e))
+    except RQ.ReviewError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "id": queue_id, "status": item.get("status"),
+            "verdict": body.verdict}
+
+
+@app.post("/api/spotcheck/{queue_id}/recalibrate")
+def recalibrate_from_review(queue_id: int, user=Depends(current_user)):
+    """对一条「有问题」复核项触发黄金集重校准 —— 仅 owner (AC4)。
+
+    危险开关 owner 独占 (reviewer -> 403); 复核项须已是 anomaly (有「有问题」结论)
+    才能触发 (否则 400)。
+    """
+    try:
+        out = RQ.trigger_recalibration(_con(), queue_id, actor=user,
+                                       role="reviewer", name="panel")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except RQ.ReviewError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "id": queue_id,
+            "recalibration_triggered": out["recalibration_triggered"],
+            "authorization": out["authorization"]}
