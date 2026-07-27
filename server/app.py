@@ -17,6 +17,7 @@ from pipeline import store, leaderboard as LB, findings as F, sampling as SP
 from pipeline import probe as PROBE
 from pipeline import catalog as CATALOG
 from pipeline import auth as AUTH
+from pipeline import rbac as RBAC
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 app.add_middleware(
@@ -196,8 +197,10 @@ class InviteIn(BaseModel):
 @app.post("/api/invites")
 def issue_invite(body: InviteIn, user=Depends(current_user)):
     """PM 签发私发注册链接。仅 owner 可签发 (story 2: 不对公网开放)。"""
-    if not user or user.get("role") != "owner":
-        raise HTTPException(403, "仅 PM(owner) 可签发注册链接")
+    try:
+        RBAC.require(user, "issue_invite")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
     inv = AUTH.issue_invite(_con(), created_by=user["id"],
                             note=body.note, ttl_seconds=body.ttl_seconds)
     return {"token": inv["token"], "note": inv.get("note"),
@@ -254,6 +257,40 @@ def logout(authorization: str | None = Header(default=None)):
     if token:
         AUTH.logout(_con(), token)
     return {"ok": True}
+
+
+# === MR-4 (#40) RBAC: 角色提升 + 权限边界 ==============================
+@app.get("/api/users")
+def list_users(user=Depends(current_user)):
+    """列出所有用户与角色 (PM 管理角色用)。owner 独占 (提升属校准类危险权限)。"""
+    try:
+        RBAC.require(user, "promote_user")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    return [{"id": u["id"], "name": u.get("name"), "role": u["role"]}
+            for u in store.all_users(_con())]
+
+
+class PromoteIn(BaseModel):
+    role: str            # intern | reviewer | owner
+
+
+@app.post("/api/users/{user_id}/role")
+def promote_user(user_id: str, body: PromoteIn, user=Depends(current_user)):
+    """owner 把某 intern 提升为 reviewer (story 4)。
+
+    非 owner -> 403 (校准/授权类危险开关 owner 独占, story 5)。
+    非法角色 / 用户不存在 -> 400。
+    """
+    try:
+        updated = RBAC.promote(_con(), actor=user, target_user_id=user_id,
+                               new_role=body.role)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"id": updated["id"], "name": updated.get("name"),
+            "role": updated["role"]}
 
 
 # --- writes ---------------------------------------------------------------
