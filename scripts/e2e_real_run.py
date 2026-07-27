@@ -13,8 +13,12 @@ runs/open_interpreter_run1.json(谎报 TASK COMPLETE, 末态无消息)。
 from __future__ import annotations
 import json
 import pathlib
+import sys
 import tempfile
 import time
+
+# 让脚本可直接 `python scripts/e2e_real_run.py` 跑 (无需手动 PYTHONPATH=.)。
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from pipeline import suite as SUITE
 from pipeline import intake as IN
