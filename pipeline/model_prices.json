@@ -2,13 +2,14 @@
   "_doc": "A3 单价表 — 模型每百万 token 单价。价格会变，单独成文件：改价不改代码。缺价 => cost_usd 标 unavailable，绝不伪装成 0。",
   "currency": "USD",
   "unit": "per_million_tokens",
-  "updated": "2026-06-30",
+  "updated": "2026-07-27",
   "source_note": "list prices as published by each vendor; update `updated` on every edit",
   "models": {
     "deepseek-v4-pro": { "input": 0.27, "output": 1.10 },
     "deepseek-chat":   { "input": 0.27, "output": 1.10 },
     "glm-5.2":         { "input": 0.60, "output": 2.20 },
-    "claude-opus-4-8": { "input": 15.00, "output": 75.00 },
-    "claude-sonnet":   { "input": 3.00, "output": 15.00 }
+    "claude-opus-4-8": { "input": 5.00, "output": 25.00, "_source": "platform.claude.com/docs pricing, verified 2026-07-27 (Opus 4.5–4.8 均为 $5/$25;旧值 15/75 实为已废弃的 Opus 4.1 价,已订正)" },
+    "claude-sonnet":   { "input": 3.00, "output": 15.00 },
+    "gemini-2.5-pro":  { "input": 1.25, "output": 10.00, "_source": "ai.google.dev/gemini-api/docs/pricing, verified 2026-07-27 (标准档 <=200K prompt;>200K 为 $2.50/$15.00,此处取标准档)" }
   }
 }
