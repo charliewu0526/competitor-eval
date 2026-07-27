@@ -80,6 +80,10 @@ class RunRecord:
     cost_source: str = "unavailable"        # COST_SOURCE_VALUES
     evidence_source: str = "unavailable"    # EVIDENCE_SOURCE_VALUES
     claimed_success: bool | None = None      # self-report; feeds H1 (E4)
+    # --- MR-1 (#37) 数据新鲜度 ADR-0017: 每条分数绑竞品版本 + 测试日期, 超期标陈旧 ---
+    competitor_version: str | None = None   # 闭源竞品版本不透明时可留空, 记 build 标识
+    tested_at: float | None = None          # 该次测试的时间(epoch); None => 未记录
+    stale: bool = False                     # 超过新鲜度窗口 => 标陈旧, 不冒充现状
 
     def __post_init__(self) -> None:
         _check("gate", self.gate, GATE_VALUES)
