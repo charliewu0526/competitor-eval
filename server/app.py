@@ -402,10 +402,15 @@ def promote_user(user_id: str, body: PromoteIn, user=Depends(current_user)):
 # === MR-6 (#42) 并发领取 + Assignment 状态机 (ADR-0015) ===================
 def _assignment_view(a: dict) -> dict:
     """对外投影: 只暴露状态机需要的字段 (含参赛产品集)。"""
+    products = a.get("products")
+    product = a.get("product")
+    if product is None and isinstance(products, list) and len(products) == 1:
+        product = products[0]
     return {
         "id": a["id"],
         "task_id": a["task_id"],
-        "products": a.get("products"),
+        "products": products,
+        "product": product,          # 方案B: 单产品领取单元的产品(整题遗留单元为 None)
         "status": a["status"],
         "claimed_by": a.get("claimed_by"),
         "claimed_ts": a.get("claimed_ts"),
@@ -464,33 +469,40 @@ def claim_assignment(assignment_id: str, user=rbac("claim_assignment")):
 
 class CatalogClaimIn(BaseModel):
     task_id: str
+    product: str | None = None      # 方案B: 领某一个参赛产品; 缺省=旧整题领取(兼容)
 
 
 @app.post("/api/catalog/{task_id}/claim")
-def claim_from_catalog(task_id: str, user=rbac("claim_assignment")):
-    """intern 在任务清单页直接领一道题 (PRD story 8: 自助领取)。
+def claim_from_catalog(task_id: str, body: CatalogClaimIn | None = None,
+                       user=rbac("claim_assignment")):
+    """intern 在任务清单页直接领取 (PRD story 8: 自助领取)。
 
-    一步到位打通 story 8「浏览未被领取的任务并领一道」: 把「铸造成可领取单元」
-    从 owner 独占的手动前置动作降为领取的**内部副作用** —— intern 点「领取」,
-    系统自动 materialize(幂等, 同题复用原单) 再 claim(原子锁)。铸造本身不落
-    manage_task_catalog 权限门 (它是领取的一部分, 不是清单维护), 但领取仍需
-    claim_assignment 权限, 且并发/重复领取由 store 原子锁兜底。
+    方案B (领取粒度细化到「题×产品」): body.product 给出时, 只领这道题的这个
+    产品 (materialize 该产品子单元 + claim), 不同人可用各自账号领同题不同产品。
+    product 缺省时回退旧的「整题领取」(向后兼容旧前端/脚本)。
 
-    材料: 铸造失败(题不在清单/全 cannot-reach) -> 400; 已被别人领 -> 409。
+    铸造是领取的内部副作用 (不落 manage_task_catalog 权限门), 领取仍需
+    claim_assignment 权限, 并发/重复由 store 原子锁兜底。
+    铸造失败(题不在清单/产品够不着) -> 400; 已被别人领 -> 409。
     """
     con = _con()
+    product = body.product if body else None
     try:
-        a = ASSIGN.materialize_for_task(con, task_id)
+        if product:
+            a = ASSIGN.materialize_product_for_task(con, task_id, product)
+        else:
+            a = ASSIGN.materialize_for_task(con, task_id)
     except ASSIGN.AssignmentError as e:
         raise HTTPException(400, str(e))
     # 已被领取(claimed/submitted): 给人话提示, 不静默失败。
     if a["status"] != "open":
         who = a.get("claimed_by")
         mine = who == user["id"]
+        what = f"这道题的 {product}" if product else "这道题"
         raise HTTPException(
             409,
-            f"这道题已被你领取,去『我的任务』继续。" if mine
-            else f"这道题已被 {who} 领取,换一道吧。")
+            f"{what}已被你领取,去『我的任务』继续。" if mine
+            else f"{what}已被 {who} 领取,换一个吧。")
     try:
         a = ASSIGN.claim(con, a["id"], user["id"])
     except ASSIGN.IllegalTransition as e:

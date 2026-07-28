@@ -33,18 +33,30 @@ function CompetitorTags({ competitors }) {
 }
 
 function TaskPanel({ task, canClaim, onClaim, claiming }) {
+  // 方案B: 领取粒度细化到「题×产品」—— 每个参赛产品一个独立领取按钮,
+  // 不同人可用各自账号分别领同题的不同产品。参赛集 = participating (GATE 派生)。
+  const participating = task.participating || [];
+  const nameOf = (pid) => {
+    const c = (task.competitors || []).find((x) => x.id === pid);
+    return c ? c.display_name : pid;
+  };
   return (
     <div>
-      {canClaim && (
+      {canClaim && participating.length > 0 && (
         <div style={{ marginBottom: 12 }}>
-          <Button type="primary" icon={<ThunderboltOutlined />}
-            loading={claiming} onClick={() => onClaim(task.task_id)}>
-            领取这道题
-          </Button>
-          <Text type="secondary" style={{ marginLeft: 10 }}>
-            领取 = 领它<Text strong>整组同域竞品对打</Text>({task.participating?.join(" / ") || "—"}),
-            领后去『我的任务』给每个产品各交一份产物。
+          <Text type="secondary" style={{ display: "block", marginBottom: 6 }}>
+            领取粒度 = <Text strong>这道题的某一个产品</Text>。你手上有哪个账号就领哪个,
+            不同产品可由不同人分别领取。领后去『我的任务』交这个产品的产物。
           </Text>
+          <Space size={[8, 8]} wrap>
+            {participating.map((pid) => (
+              <Button key={pid} type="primary" icon={<ThunderboltOutlined />}
+                loading={claiming === `${task.task_id}::${pid}`}
+                onClick={() => onClaim(task.task_id, pid)}>
+                领取 {nameOf(pid)}
+              </Button>
+            ))}
+          </Space>
         </div>
       )}
       <Paragraph type="secondary" style={{ marginBottom: 8 }}>

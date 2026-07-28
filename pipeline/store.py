@@ -133,7 +133,8 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS assignments (
     id                   TEXT PRIMARY KEY,   -- 领取任务单元 id
     task_id              TEXT NOT NULL,
-    products_json        TEXT,               -- 参赛产品集合 [vio, rival...] (ADR-0015 整组对打)
+    product              TEXT,               -- 方案B: 单产品领取单元的产品; 整题遗留单元为 NULL
+    products_json        TEXT,               -- 参赛产品集合 [vio, rival...] (方案B: 单产品单元为 [product])
     status               TEXT NOT NULL DEFAULT 'open',  -- open | claimed | submitted | abandoned
     claimed_by           TEXT,               -- users.id; open 时为 NULL
     claimed_ts           REAL,
@@ -142,12 +143,9 @@ CREATE TABLE IF NOT EXISTS assignments (
 -- open_assignments / assignments_by_status / reclaim_stale 都按 status 过滤,
 -- 累积到数万行时全表扫描代价显现 (体检 L3)。
 CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
--- 并发领取 DB 级兜底 (PRD#36 story10): 同一 task 在"占用中"(claimed|submitted)最多一行。
--- 即便代码路径的行锁被绕过, DB 也拒绝第二个人把同题领成第二条占用单。放弃/超时会把
--- 状态翻回 open (partial 条件不含 open), 故同题可被下一个人再领, 不误伤回收。
--- SQLite 与 Postgres 的 partial unique index 语法一致, translate_ddl 不碰 WHERE 子句。
-CREATE UNIQUE INDEX IF NOT EXISTS uq_assignment_task_active
-    ON assignments(task_id) WHERE status IN ('claimed', 'submitted');
+-- 注: 并发领取 DB 级兜底索引 (方案B: 键从 task_id 改为 (task_id, product)) 不在此建表段
+-- 创建 —— 旧库缺 product 列时 CREATE INDEX 会失败。改由 _migrate_assignment_index()
+-- 在补齐列之后显式 DROP 旧索引 + CREATE 新索引 (对称覆盖 SQLite/PG)。
 
 CREATE TABLE IF NOT EXISTS submissions (
     id                   TEXT PRIMARY KEY,   -- 一个产品一次提交的一整包
@@ -248,6 +246,26 @@ def _migrate(con: sqlite3.Connection) -> list[str]:
     return added
 
 
+def _migrate_assignment_index(con) -> None:
+    """方案B: 把并发领取唯一索引从 (task_id) 换成 (task_id, product)。
+
+    旧库有 uq_assignment_task_active(锁"同题最多一条 active"), 会阻止同题的不同
+    产品各成一条领取单元。产品级拆单后, 唯一性应落在 (task_id, product): 同题同产品
+    最多一条 active, 但不同产品互不挡。DROP 旧索引 + CREATE 新索引, 对 SQLite/PG
+    语法一致 (partial unique index)。product 列此刻已由 _migrate/pg_migrate 补齐。
+    幂等: IF EXISTS / IF NOT EXISTS。
+    """
+    try:
+        con.execute("DROP INDEX IF EXISTS uq_assignment_task_active")
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_assignment_task_product_active "
+            "ON assignments(task_id, product) WHERE status IN ('claimed', 'submitted')")
+        con.commit()
+    except Exception:
+        # 建表段可能尚未创建 assignments(极少数首连顺序), 交由下次 connect 补。
+        con.rollback() if hasattr(con, "rollback") else None
+
+
 def connect(db_path: str | pathlib.Path | None = None,
             url: str | None = None, skip_migrate: bool = False):
     """Open the single-source store.
@@ -275,6 +293,7 @@ def connect(db_path: str | pathlib.Path | None = None,
             # 故 SCHEMA 后加的列在既有库里不会自动出现。用 information_schema 探查缺列并
             # ALTER 补齐, 对称于 SQLite 的 _migrate(那个走 PRAGMA, SQLite-only)。
             _db.pg_migrate(con, _parse_schema_columns(SCHEMA))
+            _migrate_assignment_index(con)   # 方案B: (task_id,product) 唯一索引
         return con
     p = pathlib.Path(db_path) if db_path else DEFAULT_DB
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -287,6 +306,7 @@ def connect(db_path: str | pathlib.Path | None = None,
     if not skip_migrate:
         con.executescript(SCHEMA)   # creates missing tables
         _migrate(con)               # back-fills missing columns on pre-existing tables
+        _migrate_assignment_index(con)  # 方案B: (task_id,product) 唯一索引
     return con
 
 
@@ -604,18 +624,27 @@ def all_users(con) -> list[dict]:
 
 
 def upsert_assignment(con, a: dict) -> None:
-    """Persist an Assignment (一道对比任务的全部, ADR-0015). Idempotent on id.
-    products_json holds the参赛产品集合 (Violoop + 同域竞品)."""
+    """Persist an Assignment. Idempotent on id.
+
+    方案B: 若 products 恰为单产品 [p], 落 product=p 列 (供 (task_id,product) 唯一
+    索引 + 产品级领取用); 整题遗留单元(多产品)product 留 NULL, 兼容旧行为。
+    显式给 product 时以显式为准。
+    """
+    products = a.get("products")
+    product = a.get("product")
+    if product is None and isinstance(products, list) and len(products) == 1:
+        product = products[0]
     con.execute("""
-        INSERT INTO assignments (id, task_id, products_json, status,
+        INSERT INTO assignments (id, task_id, product, products_json, status,
             claimed_by, claimed_ts, created_ts)
-        VALUES (?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
-            task_id=excluded.task_id, products_json=excluded.products_json,
+            task_id=excluded.task_id, product=excluded.product,
+            products_json=excluded.products_json,
             status=excluded.status, claimed_by=excluded.claimed_by,
             claimed_ts=excluded.claimed_ts
-    """, (a["id"], a["task_id"],
-          json.dumps(a.get("products"), ensure_ascii=False),
+    """, (a["id"], a["task_id"], product,
+          json.dumps(products, ensure_ascii=False),
           a.get("status", "open"), a.get("claimed_by"),
           a.get("claimed_ts"), a.get("created_ts", time.time())))
     con.commit()

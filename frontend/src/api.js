@@ -83,9 +83,11 @@ export const postVerdict = (id, body) =>
 export const getAssignments = () => api.get("/assignments").then((r) => r.data);
 export const materializeAssignment = (taskId) =>
   api.post("/assignments/materialize", { task_id: taskId }).then((r) => r.data);
-// PRD story 8 自助领取:intern 在任务清单页直接领一道题(内部 materialize+claim)。
-export const claimFromCatalog = (taskId) =>
-  api.post(`/catalog/${encodeURIComponent(taskId)}/claim`).then((r) => r.data);
+// PRD story 8 自助领取。方案B: product 给出时只领这道题的这个产品(题×产品),
+// 不同人可用各自账号领同题不同产品; 缺省回退整题领取(兼容)。
+export const claimFromCatalog = (taskId, product) =>
+  api.post(`/catalog/${encodeURIComponent(taskId)}/claim`,
+    { task_id: taskId, product: product || null }).then((r) => r.data);
 export const claimAssignment = (id) =>
   api.post(`/assignments/${encodeURIComponent(id)}/claim`).then((r) => r.data);
 export const abandonAssignment = (id) =>

@@ -121,6 +121,77 @@ def _find_by_task(con, task_id: str) -> dict | None:
     return dict(rows) if rows else None
 
 
+# --- 方案B: 产品级领取单元物化 (领取粒度细化到「题×产品」) --------------------
+# 背景: 实习生手上各自只有一个竞品账号(无人凑齐一道题的全部参赛产品), 整题领取
+# 会死锁。故把一道题的参赛集拆成 N 个「单产品」子 Assignment: 每个只含一个产品,
+# 可被不同人用各自账号独立领取/提交/收口。同题不同产品分散在多个 assignment,
+# 评分/榜单仍按 (task_id, product) 聚合, 横向对比不受影响。
+# 代价(用户已拍板接受): 同题不同产品可能由不同人跑, 掺入人的操作差异 —— 靠
+# submitted_by 留痕缓解, 不再强求「同题同人」。
+def _find_by_task_product(con, task_id: str, product: str) -> dict | None:
+    """按 (task_id, product) 找已物化的单产品子单元。products_json 存 [product]。"""
+    for r in con.execute(
+            "SELECT * FROM assignments WHERE task_id=? ORDER BY created_ts, id",
+            (task_id,)):
+        a = store._decode_assignment(dict(r))
+        prods = a.get("products") or []
+        if len(prods) == 1 and prods[0] == product:
+            return a
+    return None
+
+
+def materialize_product_for_task(con, task_id: str, product: str, *,
+                                 tasks_dir=None, registry=None,
+                                 assignment_id: str | None = None,
+                                 now: float | None = None) -> dict:
+    """把一道题的「某一个参赛产品」铸成独立可领取单元 (幂等 on (task_id, product))。
+
+    product 必须在该题 GATE 派生的参赛集内 (够得着), 否则 AssignmentError ——
+    不给够不着的产品造领取单元 (立身之本: 够不着不硬拉进来打 0)。
+    同一 (task, product) 已物化则复用原单、status 不动 (免得把已领的重置回 open)。
+    """
+    card = CATALOG.task_detail(task_id, tasks_dir=tasks_dir, registry=registry)
+    if card is None:
+        raise AssignmentError(f"任务不存在于清单: {task_id!r}")
+    participating = list(card.get("participating") or [])
+    if product not in participating:
+        raise AssignmentError(
+            f"产品 {product!r} 不在任务 {task_id!r} 参赛集 {participating!r} 内 "
+            f"(够不着的产品不物化为领取单元)")
+
+    existing = _find_by_task_product(con, task_id, product)
+    if existing is not None:
+        return store.get_assignment(con, existing["id"])
+
+    aid = assignment_id or f"as-{task_id}-{product}-{uuid.uuid4().hex[:8]}"
+    store.upsert_assignment(con, {
+        "id": aid,
+        "task_id": task_id,
+        "products": [product],
+        "status": "open",
+        "created_ts": now if now is not None else time.time(),
+    })
+    return store.get_assignment(con, aid)
+
+
+def materialize_products_for_task(con, task_id: str, *, tasks_dir=None,
+                                  registry=None, now: float | None = None) -> list[dict]:
+    """把一道题的参赛集里 EVERY 产品各铸成一个独立可领取单元, 返回单元列表。
+
+    参赛集为空 (全 cannot-reach) -> AssignmentError (没产品可打的题不挂清单)。
+    """
+    card = CATALOG.task_detail(task_id, tasks_dir=tasks_dir, registry=registry)
+    if card is None:
+        raise AssignmentError(f"任务不存在于清单: {task_id!r}")
+    participating = list(card.get("participating") or [])
+    if not participating:
+        raise AssignmentError(
+            f"任务 {task_id!r} 无参赛产品 (全 cannot-reach), 不物化为可领取单元")
+    return [materialize_product_for_task(con, task_id, p, tasks_dir=tasks_dir,
+                                         registry=registry, now=now)
+            for p in participating]
+
+
 # --- 领取 (并发控制复用 store 原子锁) --------------------------------------
 def claim(con, assignment_id: str, user_id: str) -> dict:
     """intern 领取一道 Assignment。成功回传领到的 Assignment。

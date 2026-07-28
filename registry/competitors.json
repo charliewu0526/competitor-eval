@@ -46,8 +46,8 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["browser-web"],
-    "notes": "调研2026-07校准: 逆向确认无鼠标/截图/GUI控制工具, 仅Playwright浏览器+CLI。office是云端生成.xlsx非操控Excel GUI -> 去掉office-suite。WebBridge仅控浏览器(含网页版微信, 非微信客户端)。"
+    "capability_domains": ["browser-web", "computer-control"],
+    "notes": "调研2026-07+charlie更正: Kimi Agent(Kimi Work桌面端)能力比初判宽。browser-web: WebBridge(CDP)驱动本地真实Chrome/Edge含登录态。computer-control: Kimi Work桌面端有CLI+本地文件操作+Python/Shell执行(重命名/归档/清理/跑脚本)。仍无视觉GUI操控(不控微信客户端/Excel GUI窗口),故不登记wechat-im/no-api-app/office-suite(office是生成.xlsx非操控)。"
   },
   {
     "id": "codebuddy",

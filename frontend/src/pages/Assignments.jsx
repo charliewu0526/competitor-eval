@@ -167,6 +167,7 @@ function AssignmentCard({ a, me, busy, onClaim, onAbandon, onSubmitFinal, onChan
   return (
     <Card style={{ marginBottom: 12 }}
       title={<Space wrap>{statusTag(a.status)}<b>{a.task_id}</b>
+        {a.product && <Tag color="blue">产品 {a.product}</Tag>}
         {a.claimed_by && <span style={{ color: "#8c8c8c", fontWeight: 400 }}>
           领取人 {a.claimed_by}{mine ? "(你)" : ""}</span>}
       </Space>}
