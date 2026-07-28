@@ -23,7 +23,8 @@
       "a non-receipt image mixed in"
     ],
     "capability_domain": "no-api-app",
-    "task_nature": "dirty-data"
+    "task_nature": "dirty-data",
+    "setup": "待录入凭证为 input/receipts/ 下的收据图(金额/日期需人读,含手写/多币种)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 按图里信息录入,勿编造数字。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

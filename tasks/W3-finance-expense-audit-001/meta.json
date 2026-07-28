@@ -23,7 +23,8 @@
       "招待上限边界: 孙婷6800<8000通过, 钱多12000>8000打回; 无票(吴迪)一律打回"
     ],
     "capability_domain": "professional-workflow",
-    "task_nature": "workflow-heavy"
+    "task_nature": "workflow-heavy",
+    "setup": "跨 app 职业工作流。素材:input/expenses.csv(报销申请)、input/budget.txt(规则)、input/contacts.txt(微信)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 按规则审核,微信通知被打回者,勿改申请数据。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

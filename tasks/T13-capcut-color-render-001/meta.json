@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "no-api-app",
-    "task_nature": "long-horizon"
+    "task_nature": "long-horizon",
+    "setup": "待处理素材为 input/raw-footage/ 下 5 个片段(占位视频)。请勿自换素材;在剪映里统一调色+加转场后渲染导出。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

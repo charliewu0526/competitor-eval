@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "no-api-app",
-    "task_nature": "simple"
+    "task_nature": "simple",
+    "setup": "待剪素材为系统提供的 input/clip.mp4(占位视频,足够走通导入/裁剪/导出流程)。请勿自换素材;在剪映里导入它,裁剪 00:05–00:20,按 1080p 导出。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

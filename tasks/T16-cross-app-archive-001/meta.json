@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "computer-control",
-    "task_nature": "long-horizon"
+    "task_nature": "long-horizon",
+    "setup": "按题目从指定来源取附件→建文件夹→打包。若题目未随附素材,以题面描述的来源为准,勿自造不同的文件集。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

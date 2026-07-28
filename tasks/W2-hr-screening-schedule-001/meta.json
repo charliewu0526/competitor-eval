@@ -23,7 +23,8 @@
       "残缺行(周# 缺失, 字段空)是无效条目应跳过, 不能当候选人"
     ],
     "capability_domain": "professional-workflow",
-    "task_nature": "workflow-heavy"
+    "task_nature": "workflow-heavy",
+    "setup": "跨 app 职业工作流。素材:input/candidates.csv(候选人)、input/jd.txt(硬性要求)、input/contacts.txt(微信)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 按 JD 判断入围,微信约面只发入围者,勿改候选数据。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

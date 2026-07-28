@@ -23,7 +23,8 @@
       "参会名单: 周三下午能到者才参会, 赵磊仅上午到不参会, 不能通知"
     ],
     "capability_domain": "professional-workflow",
-    "task_nature": "workflow-heavy"
+    "task_nature": "workflow-heavy",
+    "setup": "跨 app 职业工作流。素材:input/attendees.csv(参会人+时段)、input/rooms.csv(会议室)、input/contacts.txt(微信)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 求解满足必到者的时段+会议室,微信只通知实际参会者。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

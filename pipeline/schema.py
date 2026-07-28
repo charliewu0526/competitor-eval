@@ -55,6 +55,11 @@ class TaskSpec:
     # --- 任务地图: 两组正交标签 (能力域 × 任务性质), 用于评测套件圈定 ---
     capability_domain: str = "wechat-im"    # CAPABILITY_DOMAIN_VALUES; 在哪操作
     task_nature: str = "simple"             # TASK_NATURE_VALUES; 任务多硬
+    # --- 起始状态/前置准备 (owner 统一写, 实习生只读) ---
+    # 说明"这道题从什么环境/素材开始跑", 消除实习生"我没文件、要不要自建"的困惑,
+    # 并强调起始状态由系统统一提供、禁止自建, 保证各竞品在同一份素材上对打(可比)。
+    # 只是中性上手提示 + 不可改约束, 不改变任务数据本身。
+    setup: str | None = None
 
     def __post_init__(self) -> None:
         _check("tier", self.tier, TIER_VALUES)

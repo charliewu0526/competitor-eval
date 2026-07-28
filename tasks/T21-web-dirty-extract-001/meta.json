@@ -23,7 +23,8 @@
       "inconsistent currency formatting"
     ],
     "capability_domain": "browser-web",
-    "task_nature": "dirty-data"
+    "task_nature": "dirty-data",
+    "setup": "脏列表页见 input/target-url.txt(指向 input/listing.html,价格在 span/div 混排、缺评分、混入广告行)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 从这个页面抽取,勿自换网页。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

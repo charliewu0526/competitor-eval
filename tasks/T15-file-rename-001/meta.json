@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "computer-control",
-    "task_nature": "simple"
+    "task_nature": "simple",
+    "setup": "待重命名的照片在 input/photos/(固定 5 张:IMG_0001/0002/0003.jpg、DSC_1010.jpg、photo (1).jpg)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 就对这个文件夹这 5 张操作——文件夹位置和图片数量都固定,勿自建目录或增删图片。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

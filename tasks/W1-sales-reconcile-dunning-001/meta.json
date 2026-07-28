@@ -24,7 +24,8 @@
       "已到账客户(云图/远景)绝不能被催款,漏催未到账客户算失败"
     ],
     "capability_domain": "professional-workflow",
-    "task_nature": "workflow-heavy"
+    "task_nature": "workflow-heavy",
+    "setup": "跨 app 职业工作流。素材:input/receivables.csv(应收)、input/bank-statement.csv(银行流水)、input/contacts.txt(微信联系人)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 微信在本机已登录客户端里发;按给定数据判断未到账者,勿改数据、勿群发。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

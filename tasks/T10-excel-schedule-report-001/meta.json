@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "office-suite",
-    "task_nature": "scheduled"
+    "task_nature": "scheduled",
+    "setup": "账本为系统提供的 input/ledger.xlsx,含两个 sheet:transactions(逐笔流水)与 summary(月度汇总,初值为上月旧值待重算)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 任务是重算 summary 并导出 PDF,勿改流水数据。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

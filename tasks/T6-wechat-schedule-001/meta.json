@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "wechat-im",
-    "task_nature": "scheduled"
+    "task_nature": "scheduled",
+    "setup": "在本机已登录的微信客户端里操作(定时任务)。无需 input 文件。按题目设定时间/内容,勿改系统时钟造假。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

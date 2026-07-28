@@ -67,6 +67,15 @@ function TaskPanel({ task, canClaim, onClaim, claiming }) {
         {task.expects_file ? " · 产出文件" : ""}
       </Paragraph>
 
+      {task.setup && (
+        <Card size="small" title="起始状态 / 前置准备 (由 PM 统一提供, 请勿自建素材)"
+          style={{ marginBottom: 12, background: "#fffbe6", borderColor: "#ffe58f" }}>
+          <Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>
+            {task.setup}
+          </Paragraph>
+        </Card>
+      )}
+
       <Card size="small" title="中立标准 Prompt (每个产品发同一条, ADR-0016)"
         style={{ marginBottom: 12, background: "#fafafa" }}>
         <Paragraph copyable style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>

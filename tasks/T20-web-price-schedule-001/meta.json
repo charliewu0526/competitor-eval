@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "browser-web",
-    "task_nature": "scheduled"
+    "task_nature": "scheduled",
+    "setup": "商品页见 input/target-url.txt(指向 input/product.html)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 定时抓这个页面的价格,勿换成别的商品。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

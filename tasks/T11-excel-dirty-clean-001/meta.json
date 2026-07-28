@@ -23,7 +23,8 @@
       "a duplicated header row in the middle"
     ],
     "capability_domain": "office-suite",
-    "task_nature": "dirty-data"
+    "task_nature": "dirty-data",
+    "setup": "脏数据为系统提供的 input/expenses.csv(日期格式不一/金额带货币符号文本/空行/中途重复表头)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 清洗后在 B1 给出金额总和。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

@@ -95,6 +95,7 @@ def _task_card(loaded, registry) -> dict:
         "task_nature": s.task_nature,
         "requires_local_desktop": s.requires_local_desktop,
         "prompt": s.prompt,                 # 中立标准 Prompt (ADR-0016)
+        "setup": s.setup,                   # 起始状态/前置准备 (owner写, intern只读)
         "core_assertions": list(s.core_assertions),
         "human_assertions": _human_assertions(loaded),  # 人工勾选断言(提交表单用)
         "expects_file": s.expects_file,

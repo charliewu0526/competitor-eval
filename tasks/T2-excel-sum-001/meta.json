@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "office-suite",
-    "task_nature": "simple"
+    "task_nature": "simple",
+    "setup": "对系统提供的 input/sales.xlsx 操作。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。"
   },
   "dirty_data": {
     "suggested_by": "ai:generator",

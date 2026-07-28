@@ -23,7 +23,8 @@
       "empty lines"
     ],
     "capability_domain": "wechat-im",
-    "task_nature": "dirty-data"
+    "task_nature": "dirty-data",
+    "setup": "脏名单见 input/roster.txt(含错别字/重复/尾随空格/垃圾行)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 需你判断哪些是能匹配到微信的真实联系人,勿凭空补人。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

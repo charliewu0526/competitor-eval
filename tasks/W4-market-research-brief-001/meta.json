@@ -24,7 +24,8 @@
       "跨三个来源页提取, 不能张冠李戴混淆竞品字段"
     ],
     "capability_domain": "professional-workflow",
-    "task_nature": "workflow-heavy"
+    "task_nature": "workflow-heavy",
+    "setup": "跨 app 职业工作流。素材:input/pages/(三个竞品本地页 rival-a/b/c.html)、input/template.txt(简报要求)、input/boss-contact.txt(汇报对象)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 rival-c 价格缺失须如实标\"未公开\",严禁编造。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

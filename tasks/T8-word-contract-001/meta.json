@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "office-suite",
-    "task_nature": "simple"
+    "task_nature": "simple",
+    "setup": "待处理文档为系统提供的 input/contract-draft.docx。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 在此文档上套样式/加页码/导出,勿另起新文档。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

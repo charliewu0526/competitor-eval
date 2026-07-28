@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "wechat-im",
-    "task_nature": "simple"
+    "task_nature": "simple",
+    "setup": "在本机已登录的微信客户端里操作。无需 input 文件。请勿新建群/改联系人备注,只按题目发指定消息。"
   },
   "dirty_data": {
     "suggested_by": "ai:generator",

@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "office-suite",
-    "task_nature": "long-horizon"
+    "task_nature": "long-horizon",
+    "setup": "12 个月度表在 input/sales-by-region/(2025-01..12.xlsx)。起始素材由系统在 input/ 统一提供,请勿自建或更换文件——所有产品必须在同一份素材上跑,结果才可比。 合并这 12 个文件,勿增删月份。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

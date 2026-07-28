@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "wechat-im",
-    "task_nature": "long-horizon"
+    "task_nature": "long-horizon",
+    "setup": "在本机已登录的微信客户端里操作。无需 input 文件。按题目对指定对象跟进,勿改动其他会话。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",

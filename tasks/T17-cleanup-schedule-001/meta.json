@@ -18,7 +18,8 @@
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],
     "capability_domain": "computer-control",
-    "task_nature": "scheduled"
+    "task_nature": "scheduled",
+    "setup": "系统清理类定时任务,按题目设定。无固定 input 文件;勿对题外的真实系统文件动手,只在题目指定范围内操作。"
   },
   "dirty_data": {
     "suggested_by": "ai:gen_tasks",
