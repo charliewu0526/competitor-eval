@@ -113,10 +113,19 @@ def _coerce_facts(raw: dict) -> dict:
     ev = raw.get("evidence_source", "log")
     if ev not in EVIDENCE_SOURCE_VALUES:
         raise ValueError(f"evidence_source must be one of {EVIDENCE_SOURCE_VALUES}, got {ev!r}")
+    # None-safe: 诚实的 "unavailable" 日志会显式带 input_tokens=None(键存在但值为
+    # None, dict.get 的默认参数不生效)。把 None / 缺失 / 空串统一归 0 ——「拿不到」
+    # 这个事实由 cost_source=unavailable 承载, 不伪装成真花了 0 (与 skill 诚实原则同源)。
+    def _int0(*keys):
+        for k in keys:
+            v = raw.get(k)
+            if v is not None and v != "":
+                return int(v)
+        return 0
     return {
-        "cost_input_tokens": int(raw.get("input_tokens", raw.get("cost_input_tokens", 0))),
-        "cost_output_tokens": int(raw.get("output_tokens", raw.get("cost_output_tokens", 0))),
-        "cost_model_calls": int(raw.get("model_calls", raw.get("cost_model_calls", 0))),
+        "cost_input_tokens": _int0("input_tokens", "cost_input_tokens"),
+        "cost_output_tokens": _int0("output_tokens", "cost_output_tokens"),
+        "cost_model_calls": _int0("model_calls", "cost_model_calls"),
         "model": raw.get("model"),
         "cost_source": src,
         "evidence_source": ev,

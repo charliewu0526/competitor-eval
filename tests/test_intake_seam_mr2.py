@@ -213,6 +213,26 @@ class ProductionTranslatorContract(unittest.TestCase):
         self.assertEqual(rr.cost_source, "unavailable")
         self.assertIsNone(rr.cost_usd)
 
+    def test_none_valued_tokens_coerced_not_crash(self):
+        # 回归 #8: 诚实的 "unavailable" 日志显式带 input_tokens=None(键存在但值 None)。
+        # 曾因 int(raw.get("input_tokens", 0)) 在键存在时不取默认 -> int(None) 崩。
+        # 现在 None/缺失/空串统一归 0,「拿不到」由 cost_source=unavailable 承载。
+        d = tempfile.mkdtemp()
+        bundle = self._write_bundle(d, {
+            "input_tokens": None, "output_tokens": None, "model_calls": None,
+            "model": None, "cost_source": "unavailable",
+            "evidence_source": "log", "events": ["native op"]})
+        sub = IN.Submission(
+            assignment_id="A1", product="vio", task_id="T1-wechat-send-001",
+            log_bundle_path=bundle,
+            manual_assertions={"msg_received": True, "text_exact": True,
+                               "no_collateral": True})
+        rr = IN.SubmissionTranslator().translate(sub, self.meta, self.reg)
+        self.assertEqual(rr.cost_input_tokens, 0)
+        self.assertEqual(rr.cost_output_tokens, 0)
+        self.assertEqual(rr.cost_model_calls, 0)
+        self.assertEqual(rr.cost_source, "unavailable")
+
     def test_module_level_translate_signature(self):
         # AC: translate(submission, task_meta, registry) -> RunRecord exists.
         d = tempfile.mkdtemp()
