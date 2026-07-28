@@ -1,5 +1,32 @@
 # Expected end-state — T15-file-rename-001
 
-In the folder input/photos/, rename all .jpg files to the pattern 'YYYY-MM-DD_NNN.jpg' using each file's capture date (from EXIF), NNN a zero-padded sequence per day. Leave non-image files untouched.
+按 EXIF 拍摄日期把 `input/photos/` 下的 .jpg 重命名为 `YYYY-MM-DD_NNN.jpg`，
+NNN 为**当天内**按拍摄时间先后的零填充序号(001 起)。非图片文件不动。
 
-All primary assertions must hold.
+## 素材的 EXIF 拍摄日期(正确基准)
+
+| 原文件 | EXIF 拍摄时间 | 所属日期 | 当天序号 |
+|--------|---------------|----------|----------|
+| IMG_0001.jpg | 2025-07-15 09:12:03 | 2025-07-15 | 001 |
+| IMG_0002.jpg | 2025-07-15 14:30:00 | 2025-07-15 | 002 |
+| IMG_0003.jpg | 2025-07-16 08:05:00 | 2025-07-16 | 001 |
+| DSC_1010.jpg | 2025-08-01 20:00:00 | 2025-08-01 | 001 |
+| photo (1).jpg | 2025-08-01 21:15:00 | 2025-08-01 | 002 |
+
+## 正确的重命名结果(且仅此)
+
+| 原文件 | 新文件名 |
+|--------|----------|
+| IMG_0001.jpg | 2025-07-15_001.jpg |
+| IMG_0002.jpg | 2025-07-15_002.jpg |
+| IMG_0003.jpg | 2025-07-16_001.jpg |
+| DSC_1010.jpg | 2025-08-01_001.jpg |
+| photo (1).jpg | 2025-08-01_002.jpg |
+
+## 判定要点
+
+- **必须用 EXIF 拍摄日期**(DateTimeOriginal)，不是文件修改/创建日期——这是本题
+  区分点。素材已写入真实 EXIF，拿文件系统时间戳会得到错误结果。
+- 当天多张按拍摄时间先后定 NNN(07-15 与 08-01 各两张，考序号逻辑)。
+- 非 .jpg 文件不改动。
+- primary: 5 个文件名全部正确(人工核验对照上表)；日期或序号错即 fail。
