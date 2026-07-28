@@ -83,12 +83,18 @@ export const postVerdict = (id, body) =>
 export const getAssignments = () => api.get("/assignments").then((r) => r.data);
 export const materializeAssignment = (taskId) =>
   api.post("/assignments/materialize", { task_id: taskId }).then((r) => r.data);
+// PRD story 8 自助领取:intern 在任务清单页直接领一道题(内部 materialize+claim)。
+export const claimFromCatalog = (taskId) =>
+  api.post(`/catalog/${encodeURIComponent(taskId)}/claim`).then((r) => r.data);
 export const claimAssignment = (id) =>
   api.post(`/assignments/${encodeURIComponent(id)}/claim`).then((r) => r.data);
 export const abandonAssignment = (id) =>
   api.post(`/assignments/${encodeURIComponent(id)}/abandon`).then((r) => r.data);
+// 收口会同步触发整组盲评面板(真打多模型, 30-90s), 远超默认 15s 超时 ——
+// 给这个慢端点单独放大到 180s, 否则前端会在评分完成前中断请求(走查发现的 UX bug)。
 export const submitAssignment = (id) =>
-  api.post(`/assignments/${encodeURIComponent(id)}/submit`).then((r) => r.data);
+  api.post(`/assignments/${encodeURIComponent(id)}/submit`, null,
+    { timeout: 180000 }).then((r) => r.data);
 export const getSubmissionProgress = (id) =>
   api.get(`/assignments/${encodeURIComponent(id)}/submissions`).then((r) => r.data);
 // 提交一份产品交付(multipart:产物 + 日志包 + 元数据)。

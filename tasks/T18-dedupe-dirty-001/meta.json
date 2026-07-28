@@ -1,0 +1,40 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T18-dedupe-dirty-001",
+    "domain": "1",
+    "app": "finder",
+    "prompt": "The folder input/messy-dir/ has nested subfolders with duplicate files (same content, different names), empty folders, and .DS_Store junk. Produce a deduplicated flat copy in output/clean-dir/ keeping one copy of each unique file; remove junk.",
+    "core_assertions": [
+      "primary: each unique file kept exactly once",
+      "primary: junk files removed",
+      "secondary: no unique file lost"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "heavy",
+    "dirty_data_level_suggested": "heavy",
+    "known_edge_cases": [
+      "identical content under different filenames",
+      "empty nested folders",
+      ".DS_Store / Thumbs.db junk",
+      "deeply nested structure"
+    ],
+    "capability_domain": "computer-control",
+    "task_nature": "dirty-data"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded dirty-data task for computer-control."
+  },
+  "assertions_module": "tasks.T18_dedupe_dirty_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

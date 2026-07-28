@@ -1,0 +1,40 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T14-accounting-dirty-entry-001",
+    "domain": "1",
+    "app": "accounting-app",
+    "prompt": "Open the desktop accounting app. Enter the vouchers from input/receipts/ (a folder of scanned receipts with inconsistent naming, some blurry, some duplicates). Enter each unique valid receipt once; flag the unreadable ones instead of guessing.",
+    "core_assertions": [
+      "primary: each unique valid receipt entered exactly once",
+      "primary: unreadable receipts were flagged not guessed",
+      "secondary: no duplicate voucher entries"
+    ],
+    "expects_file": false,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "heavy",
+    "dirty_data_level_suggested": "heavy",
+    "known_edge_cases": [
+      "inconsistent file naming",
+      "blurry/unreadable scans",
+      "duplicate receipts",
+      "a non-receipt image mixed in"
+    ],
+    "capability_domain": "no-api-app",
+    "task_nature": "dirty-data"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded dirty-data task for no-api-app."
+  },
+  "assertions_module": "tasks.T14_accounting_dirty_entry_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T11-excel-dirty-clean-001",
+    "domain": "1",
+    "app": "excel",
+    "prompt": "Open input/expenses.csv. It has inconsistent date formats, some amounts stored as text with currency symbols, blank rows, and a duplicated header mid-file. Clean it and produce output/expenses-clean.xlsx with a correct SUM of all amounts in cell B1.",
+    "core_assertions": [
+      "primary: cleaned workbook was produced",
+      "primary: SUM in B1 equals the correct total 48213.5",
+      "secondary: dirty rows were correctly normalized"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "heavy",
+    "dirty_data_level_suggested": "heavy",
+    "known_edge_cases": [
+      "mixed date formats (YYYY-MM-DD vs DD/MM/YYYY)",
+      "amounts as text with '¥' / ',' ",
+      "blank rows scattered",
+      "a duplicated header row in the middle"
+    ],
+    "capability_domain": "office-suite",
+    "task_nature": "dirty-data"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded dirty-data task for office-suite."
+  },
+  "assertions_module": "tasks.T11_excel_dirty_clean_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

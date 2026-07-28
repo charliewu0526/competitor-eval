@@ -1,0 +1,35 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T15-file-rename-001",
+    "domain": "1",
+    "app": "finder",
+    "prompt": "In the folder input/photos/, rename all .jpg files to the pattern 'YYYY-MM-DD_NNN.jpg' using each file's capture date (from EXIF), NNN a zero-padded sequence per day. Leave non-image files untouched.",
+    "core_assertions": [
+      "primary: all jpgs renamed to the date pattern",
+      "primary: sequence numbering is correct per day",
+      "secondary: non-image files untouched"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "computer-control",
+    "task_nature": "simple"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded simple task for computer-control."
+  },
+  "assertions_module": "tasks.T15_file_rename_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

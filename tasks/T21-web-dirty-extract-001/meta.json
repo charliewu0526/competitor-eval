@@ -1,0 +1,40 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T21-web-dirty-extract-001",
+    "domain": "1",
+    "app": "browser",
+    "prompt": "Open the messy product listing page at input/target-url.txt. Extract name, price, and rating for all products into output/products.csv. The HTML is inconsistent: some prices in spans, some in divs, missing ratings, and ad rows mixed in.",
+    "core_assertions": [
+      "primary: products.csv was produced",
+      "primary: all real products extracted, ads skipped",
+      "secondary: missing ratings handled gracefully"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "heavy",
+    "dirty_data_level_suggested": "heavy",
+    "known_edge_cases": [
+      "prices in varying tags (span/div)",
+      "some products missing ratings",
+      "advertisement rows interleaved",
+      "inconsistent currency formatting"
+    ],
+    "capability_domain": "browser-web",
+    "task_nature": "dirty-data"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded dirty-data task for browser-web."
+  },
+  "assertions_module": "tasks.T21_web_dirty_extract_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

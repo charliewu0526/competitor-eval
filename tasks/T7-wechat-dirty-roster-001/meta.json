@@ -1,0 +1,40 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T7-wechat-dirty-roster-001",
+    "domain": "1",
+    "app": "wechat",
+    "prompt": "You are given a messy contact list in input/roster.txt (names with typos, duplicates, and trailing spaces). Send '会议改到明天上午10点' to every UNIQUE real contact that matches someone in your WeChat. Skip unmatched/garbage entries.",
+    "core_assertions": [
+      "primary: each unique matched contact received the message",
+      "primary: garbage/unmatched entries were skipped",
+      "secondary: no duplicate messages sent to the same person"
+    ],
+    "expects_file": false,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "heavy",
+    "dirty_data_level_suggested": "heavy",
+    "known_edge_cases": [
+      "duplicate names in roster",
+      "names with trailing whitespace",
+      "typo'd names with no WeChat match",
+      "empty lines"
+    ],
+    "capability_domain": "wechat-im",
+    "task_nature": "dirty-data"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded dirty-data task for wechat-im."
+  },
+  "assertions_module": "tasks.T7_wechat_dirty_roster_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

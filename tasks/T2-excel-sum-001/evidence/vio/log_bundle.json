@@ -1,0 +1,50 @@
+{
+  "product": "vio",
+  "runner": "violoop",
+  "task": "T2-excel-sum-001",
+  "started_at": "2026-07-28T03:51:25.944006",
+  "duration_s": 0.065,
+  "tool_calls": 8,
+  "cost": {
+    "input_tokens": null,
+    "output_tokens": null,
+    "usd": null,
+    "note": "violoop native op, no LLM token meter on this path"
+  },
+  "claimed_success": true,
+  "result_cell_C14": 15800,
+  "timeline": [
+    {
+      "ts": 0.0,
+      "event": "vio(violoop): open workbook input/sales.xlsx"
+    },
+    {
+      "ts": 0.062,
+      "event": "sheets=['Q1']; select Q1"
+    },
+    {
+      "ts": 0.062,
+      "event": "read C2:C13"
+    },
+    {
+      "ts": 0.062,
+      "event": "values=[1200, 980, 1540, 760, 2100, 1330, 890, 1720, 1450, 600, 2050, 1180]"
+    },
+    {
+      "ts": 0.062,
+      "event": "compute SUM(C2:C13)=15800"
+    },
+    {
+      "ts": 0.062,
+      "event": "write =SUM(C2:C13) into C14"
+    },
+    {
+      "ts": 0.064,
+      "event": "saved output/vio/sales.xlsx"
+    },
+    {
+      "ts": 0.065,
+      "event": "C14 set to literal 15800 (ensure artifact holds computed value); saved"
+    }
+  ]
+}

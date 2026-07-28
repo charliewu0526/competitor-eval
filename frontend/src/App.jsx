@@ -6,7 +6,7 @@ import {
   DollarOutlined, BulbOutlined, ExperimentOutlined, SafetyCertificateOutlined,
   AuditOutlined, UnorderedListOutlined, AppstoreOutlined, DiffOutlined,
   UserOutlined, LogoutOutlined, SolutionOutlined, DeploymentUnitOutlined,
-  TeamOutlined,
+  TeamOutlined, QuestionCircleOutlined,
 } from "@ant-design/icons";
 import { GlossaryProvider } from "./glossary.jsx";
 import { useAuth } from "./auth.jsx";
@@ -27,6 +27,7 @@ import Authorizations from "./pages/Authorizations.jsx";
 import Assignments from "./pages/Assignments.jsx";
 import Methods from "./pages/Methods.jsx";
 import Users from "./pages/Users.jsx";
+import Help from "./pages/Help.jsx";
 
 const { Header, Sider, Content } = Layout;
 
@@ -47,6 +48,7 @@ const NAV = [
   { key: "/methods", icon: <DeploymentUnitOutlined />, label: "方法沉淀", minRole: "intern" },
   { key: "/gap-report", icon: <DiffOutlined />, label: "差距报告", minRole: "intern" },
   { key: "/leaderboard", icon: <TrophyOutlined />, label: "排行榜", minRole: "intern" },
+  { key: "/help", icon: <QuestionCircleOutlined />, label: "使用说明", minRole: "intern" },
   { key: "/domain-board", icon: <AppstoreOutlined />, label: "分维度榜单", minRole: "reviewer" },
   { key: "/matrix", icon: <TableOutlined />, label: "按题矩阵", minRole: "reviewer" },
   { key: "/score", icon: <RadarChartOutlined />, label: "评分详情", minRole: "reviewer" },
@@ -128,6 +130,9 @@ export default function App() {
             <Typography.Title level={4} style={{ margin: 0 }}>
               竞品任务评测与产品机会看板
             </Typography.Title>
+            <Space size={16}>
+            <Button type="text" icon={<QuestionCircleOutlined />}
+              onClick={() => nav("/help")}>使用说明</Button>
             <Dropdown
               menu={{ items: [{ key: "logout", icon: <LogoutOutlined />, label: "登出" }],
                 onClick: ({ key }) => { if (key === "logout") logout(); } }}
@@ -138,6 +143,7 @@ export default function App() {
                 <Tag color={role.color} style={{ marginRight: 0 }}>{role.text}</Tag>
               </Space>
             </Dropdown>
+            </Space>
           </Header>
           <Content style={{ margin: 24 }}>
             <Routes>
@@ -156,6 +162,16 @@ export default function App() {
               <Route path="/spotcheck" element={<Guard path="/spotcheck"><SpotCheck /></Guard>} />
               <Route path="/authorizations" element={<Guard path="/authorizations"><Authorizations /></Guard>} />
               <Route path="/users" element={<Guard path="/users"><Users /></Guard>} />
+              <Route path="/help" element={<Guard path="/help"><Help /></Guard>} />
+              {/* 无匹配路由的人话兜底页 —— 否则敲错 URL(如 /tasks 应为 /catalog)整片白屏。 */}
+              <Route path="*" element={
+                <Result
+                  status="404"
+                  title="这个页面不存在"
+                  subTitle="你访问的地址没有对应页面,可能是链接过期或敲错了。回总览重新开始吧。"
+                  extra={<Button type="primary" href="/">回到总览</Button>}
+                />
+              } />
             </Routes>
           </Content>
         </Layout>

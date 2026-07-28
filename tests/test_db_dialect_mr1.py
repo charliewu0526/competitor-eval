@@ -70,7 +70,8 @@ class SplitStatements(unittest.TestCase):
         # 每条都应是有效 DDL (CREATE TABLE 或 CREATE INDEX), 无空片/纯注释残留
         for s in stmts:
             up = s.upper()
-            self.assertTrue("CREATE TABLE" in up or "CREATE INDEX" in up, s)
+            self.assertTrue("CREATE TABLE" in up or "CREATE INDEX" in up
+                            or "CREATE UNIQUE INDEX" in up, s)
 
     def test_comment_only_chunk_dropped(self):
         self.assertEqual(db.split_statements("-- just a comment\n"), [])

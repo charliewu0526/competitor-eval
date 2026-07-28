@@ -18,7 +18,9 @@ DIRTY_VALUES = ("none", "light", "heavy")
 CAPABILITY_DOMAIN_VALUES = ("wechat-im", "office-suite", "no-api-app",
                             "computer-control", "browser-web")
 TASK_NATURE_VALUES = ("simple", "long-horizon", "scheduled", "dirty-data")
-COST_SOURCE_VALUES = ("self-report", "proxy", "unavailable")
+# native = 我们自家原生产品无 LLM 环路执行, 成本确实为 0 (既非"拿不到"unavailable,
+# 也非竞品"自报"self-report)。零成本是可核查的事实, cost_usd 记 0.0 而非 None。
+COST_SOURCE_VALUES = ("self-report", "proxy", "unavailable", "native")
 EVIDENCE_SOURCE_VALUES = ("log", "screenshot", "recording", "unavailable")
 
 

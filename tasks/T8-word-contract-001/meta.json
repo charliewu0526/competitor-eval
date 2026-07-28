@@ -1,0 +1,35 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T8-word-contract-001",
+    "domain": "1",
+    "app": "word",
+    "prompt": "Open input/contract-draft.docx. Apply heading styles to all section titles, add page numbers in the footer, and export the result as a PDF to output/contract.pdf.",
+    "core_assertions": [
+      "primary: output PDF file was produced",
+      "primary: headings are styled and page numbers present",
+      "secondary: content unchanged from the draft"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "office-suite",
+    "task_nature": "simple"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded simple task for office-suite."
+  },
+  "assertions_module": "tasks.T8_word_contract_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

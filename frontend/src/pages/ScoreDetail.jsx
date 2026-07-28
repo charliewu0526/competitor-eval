@@ -41,7 +41,7 @@ export default function ScoreDetail() {
     if (!detail || !detail.subjective) return [];
     return Object.entries(detail.subjective).map(([dim, v]) => ({
       dim: `${dim} ${DIM_LABEL[dim] || ""}`.trim(),
-      score: typeof v === "object" ? (v.median ?? v.score ?? 0) : v,
+      score: v && typeof v === "object" ? (v.median ?? v.score ?? 0) : (v ?? 0),
     }));
   }, [detail]);
 

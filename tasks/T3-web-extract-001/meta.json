@@ -1,5 +1,6 @@
 {
   "schema": "taskbank-v1",
+  "assertions_module": "tasks.T3_web_extract",
   "task_spec": {
     "task_id": "T3-web-extract-001",
     "domain": "1",

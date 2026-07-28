@@ -142,6 +142,12 @@ CREATE TABLE IF NOT EXISTS assignments (
 -- open_assignments / assignments_by_status / reclaim_stale 都按 status 过滤,
 -- 累积到数万行时全表扫描代价显现 (体检 L3)。
 CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
+-- 并发领取 DB 级兜底 (PRD#36 story10): 同一 task 在"占用中"(claimed|submitted)最多一行。
+-- 即便代码路径的行锁被绕过, DB 也拒绝第二个人把同题领成第二条占用单。放弃/超时会把
+-- 状态翻回 open (partial 条件不含 open), 故同题可被下一个人再领, 不误伤回收。
+-- SQLite 与 Postgres 的 partial unique index 语法一致, translate_ddl 不碰 WHERE 子句。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_assignment_task_active
+    ON assignments(task_id) WHERE status IN ('claimed', 'submitted');
 
 CREATE TABLE IF NOT EXISTS submissions (
     id                   TEXT PRIMARY KEY,   -- 一个产品一次提交的一整包
@@ -895,6 +901,20 @@ def all_scores(con: sqlite3.Connection) -> list[dict]:
                 "disagreement_json": "disagreement_flagged",
                 "defects_json": "defects"})
             for r in con.execute("SELECT * FROM scores ORDER BY task_id, product")]
+
+
+def delete_findings_for_task(con: sqlite3.Connection, task_id: str) -> int:
+    """删掉某 task 的全部 findings, 返回删除条数 (收口重评前清脏数据用)。
+
+    走查 BUG-2/3 根因: findings 表按 task_id 累积, 收口重评只加不清 -> 上一轮
+    (旧竞品集) 的发现残留, 与本轮混显 (幽灵竞品 / 与产物不符的 defect)。重评前
+    先清同 task 旧 findings, 再按当前 scores 重新 classify, 保证发现池永远只反映
+    最近一次评测的真实产物。注意: 这会连带清掉 PM 已填的 product_judgment ——
+    但重评本就是「这道题重测了」, 旧判断本应重做, 符合语义。
+    """
+    cur = con.execute("DELETE FROM findings WHERE task_id=?", (task_id,))
+    con.commit()
+    return cur.rowcount
 
 
 def all_findings(con: sqlite3.Connection) -> list[dict]:

@@ -24,12 +24,14 @@ if [[ "${1:-}" == "stop" ]]; then
   exit 0
 fi
 
-# --- backend ---
+# --- backend (自托管 Postgres: 常驻 pgserver + uvicorn, 同进程同生命周期) ---
+# PRD-0003/ADR-0018: 生产用自托管 Postgres 支持多人并发领取。run_pg_backend.py 把
+# pgserver 与 uvicorn 跑在同一进程, 保证后端连的 socket 不中途消失。数据留本地 board/pgdata。
 kill_port "$BACK_PORT"
 cd "$ROOT"
-nohup python3 -m uvicorn server.app:app --host 127.0.0.1 --port "$BACK_PORT" \
+CE_BACK_PORT="$BACK_PORT" nohup python3 server/run_pg_backend.py \
   > "$ROOT/board/backend.log" 2>&1 &
-echo "backend  -> http://127.0.0.1:$BACK_PORT  (log: board/backend.log)"
+echo "backend  -> http://127.0.0.1:$BACK_PORT  (Postgres@board/pgdata, log: board/backend.log)"
 
 # --- frontend ---
 kill_port "$FRONT_PORT"

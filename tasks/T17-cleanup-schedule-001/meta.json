@@ -1,0 +1,35 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T17-cleanup-schedule-001",
+    "domain": "1",
+    "app": "system",
+    "prompt": "Set up a scheduled job that runs every day at 02:00 and deletes files older than 7 days from ~/Downloads/tmp/, logging what it removed to ~/cleanup.log.",
+    "core_assertions": [
+      "primary: a daily schedule was registered in the log",
+      "primary: deletion criteria (>7 days) is correct",
+      "secondary: it logs removed files"
+    ],
+    "expects_file": false,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "computer-control",
+    "task_nature": "scheduled"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded scheduled task for computer-control."
+  },
+  "assertions_module": "tasks.T17_cleanup_schedule_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

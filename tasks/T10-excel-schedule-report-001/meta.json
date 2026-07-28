@@ -1,0 +1,35 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T10-excel-schedule-report-001",
+    "domain": "1",
+    "app": "excel",
+    "prompt": "Set up a task that, on the last day of each month, opens input/ledger.xlsx, recalculates the monthly summary sheet, and exports it to output/monthly-report.pdf.",
+    "core_assertions": [
+      "primary: a monthly schedule was registered in the log",
+      "primary: the report generation steps are correct",
+      "secondary: export target path is correct"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "office-suite",
+    "task_nature": "scheduled"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded scheduled task for office-suite."
+  },
+  "assertions_module": "tasks.T10_excel_schedule_report_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

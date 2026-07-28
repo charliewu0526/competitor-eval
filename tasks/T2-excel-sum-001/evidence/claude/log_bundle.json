@@ -1,0 +1,48 @@
+{
+  "product": "claude",
+  "runner": "anthropic-api claude-opus-4-8",
+  "task": "T2-excel-sum-001",
+  "started_at": "2026-07-28T10:35:29.063599",
+  "duration_s": 2.3,
+  "tool_calls": 7,
+  "cost": {
+    "input_tokens": 155,
+    "output_tokens": 72,
+    "usd": 0.001545,
+    "note": "claude pricing $3/$15 per Mtok (sonnet-class)"
+  },
+  "claimed_success": true,
+  "result_cell_C14": 15800,
+  "ground_truth": 15800,
+  "actually_correct": true,
+  "timeline": [
+    {
+      "ts": 0.0,
+      "event": "claude: read input/sales.xlsx C2:C13"
+    },
+    {
+      "ts": 0.002,
+      "event": "extracted values=[1200, 980, 1540, 760, 2100, 1330, 890, 1720, 1450, 600, 2050, 1180]"
+    },
+    {
+      "ts": 0.002,
+      "event": "call Anthropic API (model=claude-opus-4-8) to solve"
+    },
+    {
+      "ts": 2.292,
+      "event": "model raw reply={\"c14\": 15800, \"reasoning\": \"Sum of C2:C13 = 1200+980+1540+760+2100+1330+890+1720+1450+600+2050+1180 = 15800\", \"done\": true}"
+    },
+    {
+      "ts": 2.293,
+      "event": "model returned c14=15800, reasoning=Sum of C2:C13 = 1200+980+1540+760+2100+1330+890+1720+1450+600+2050+1180 = 15800"
+    },
+    {
+      "ts": 2.3,
+      "event": "saved output/claude/sales.xlsx"
+    },
+    {
+      "ts": 2.3,
+      "event": "truth sum=15800; model c14=15800; success=True"
+    }
+  ]
+}

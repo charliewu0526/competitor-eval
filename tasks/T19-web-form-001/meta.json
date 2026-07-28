@@ -1,0 +1,35 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T19-web-form-001",
+    "domain": "1",
+    "app": "browser",
+    "prompt": "Go to the registration form at input/target-url.txt. Fill it using the profile in input/profile.json, submit it, and save a screenshot of the confirmation page to output/confirmation.png.",
+    "core_assertions": [
+      "primary: confirmation screenshot was saved",
+      "primary: the form was submitted successfully",
+      "primary: fields match the profile data"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "browser-web",
+    "task_nature": "long-horizon"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded long-horizon task for browser-web."
+  },
+  "assertions_module": "tasks.T19_web_form_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

@@ -19,6 +19,8 @@ from __future__ import annotations
 import json, pathlib, string
 from dataclasses import dataclass, field, asdict
 
+from pipeline.schema import CAPABILITY_DOMAIN_VALUES
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_PATH = ROOT / "registry" / "competitors.json"
 
@@ -35,12 +37,24 @@ class Competitor:
     status: str = "active"                  # STATUS_VALUES
     # --- reserved future upgrade path (PRD): bool domain -> env list ---
     reachable_envs: list[str] = field(default_factory=list)
+    # --- PRD-0003 竞品归域 (#36 方向): 该竞品覆盖哪些能力域 (CONTEXT 5 域,
+    #     与 TaskSpec.capability_domain 同一把尺子). 空 => 未登记域, GATE 退回
+    #     旧的纯 can_operate_local_desktop 布尔推导 (向后兼容旧数据/测试)。
+    #     非空 => GATE 先按域收窄参赛集 (不在竞品域内的题 = 不参赛, 非差),
+    #     域内再尊重桌面可达性 (云端产品碰需本地桌面的题仍 cannot-reach)。
+    capability_domains: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.id:
             raise ValueError("competitor id is required")
         if self.status not in STATUS_VALUES:
             raise ValueError(f"status must be one of {STATUS_VALUES}, got {self.status!r}")
+        bad = [d for d in self.capability_domains
+               if d not in CAPABILITY_DOMAIN_VALUES]
+        if bad:
+            raise ValueError(
+                f"capability_domains has unknown domain(s) {bad}; "
+                f"allowed = {CAPABILITY_DOMAIN_VALUES}")
 
 
 def blind_letter(idx: int) -> str:

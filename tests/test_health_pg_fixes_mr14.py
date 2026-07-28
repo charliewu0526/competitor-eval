@@ -168,9 +168,18 @@ class FindingsEvidenceDecoded(unittest.TestCase):
 
     def test_gap_report_from_store_surfaces_mechanism(self):
         from pipeline import gap_report as GR
-        from pipeline.registry import default_registry
+        from pipeline.registry import Competitor
+        from pipeline.registry_fakes import FakeRegistry
         con = self._con()
-        rep = GR.from_store(con, "T1", registry=default_registry())
+        # 测试自给自足: 用带 open_interpreter(开源) 的 FakeRegistry, 不耦合生产
+        # 登记表 —— 生产竞品名单已改为 PRD-0003 的 6 家(不含 open_interpreter)。
+        reg = FakeRegistry([
+            Competitor("vio", "Violoop", can_operate_local_desktop=True),
+            Competitor("open_interpreter", "Open Interpreter",
+                       can_operate_local_desktop=True, is_open_source=True,
+                       repo="https://github.com/OpenInterpreter/open-interpreter"),
+        ])
+        rep = GR.from_store(con, "T1", registry=reg)
         mech = next(m for m in rep.mechanisms if m.product == "open_interpreter")
         # 修复前这里恒 None(evidence 挖不出); 修复后应转述出机理。
         self.assertEqual(mech.mechanism, "explicit plan loop",

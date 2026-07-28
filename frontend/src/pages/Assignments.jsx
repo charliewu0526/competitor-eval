@@ -9,7 +9,7 @@ import {
 } from "@ant-design/icons";
 import {
   getAssignments, materializeAssignment, claimAssignment, abandonAssignment,
-  submitAssignment, getSubmissionProgress, postSubmission,
+  submitAssignment, getSubmissionProgress, postSubmission, getCatalogTask,
 } from "../api";
 import { useAuth } from "../auth.jsx";
 import { InfoTip } from "../glossary.jsx";
@@ -58,11 +58,21 @@ function MaterializeButton({ onDone }) {
 }
 
 // 一份产品交付的上传表单(multipart:原始产物 + 执行日志包必填)。
-function SubmitProductModal({ assignmentId, product, open, onClose, onDone }) {
+function SubmitProductModal({ assignmentId, taskId, product, open, onClose, onDone }) {
   const [form] = Form.useForm();
   const [busy, setBusy] = useState(false);
   const [artifact, setArtifact] = useState([]);
   const [logBundle, setLogBundle] = useState([]);
+  // 该题「只能人看」的客观断言(HUMAN):微信消息真发出没这类末态,脚本读不了,
+  // 由受训 intern 勾选。不勾 => intake 收不到人工断言 => manual 断言型任务恒判
+  // 0 分(走查头号阻断 bug 的修复)。机器可验断言不在此列(脚本自动判,不落人手)。
+  const [humanAsserts, setHumanAsserts] = useState([]);
+  useEffect(() => {
+    if (!open || !taskId) return;
+    getCatalogTask(taskId)
+      .then((c) => setHumanAsserts(c.human_assertions || []))
+      .catch(() => setHumanAsserts([]));
+  }, [open, taskId]);
 
   const go = async () => {
     const vals = await form.validateFields().catch(() => null);
@@ -73,11 +83,18 @@ function SubmitProductModal({ assignmentId, product, open, onClose, onDone }) {
     if (logBundle[0]?.originFileObj) fd.append("log_bundle", logBundle[0].originFileObj);
     fd.append("transcript_excerpt", vals.transcript || "");
     if (vals.claimed_success != null) fd.append("claimed_success", String(vals.claimed_success));
+    // 人工勾选断言 -> manual_assertions JSON(键=断言 ctx_key, 值=是否达成)。
+    // 未勾的显式记 false(「没确认」即「未达成」, 不伪装成功, 立身之本)。
+    if (humanAsserts.length) {
+      const ma = {};
+      for (const a of humanAsserts) ma[a.key] = vals[`ha_${a.key}`] === true;
+      fd.append("manual_assertions", JSON.stringify(ma));
+    }
     setBusy(true);
     try {
       await postSubmission(assignmentId, fd);
       message.success(`已提交 ${product} 的产物`);
-      form.resetFields(); setArtifact([]); setLogBundle([]);
+      form.resetFields(); setArtifact([]); setLogBundle([]); setHumanAsserts([]);
       onDone && onDone(); onClose();
     } catch (e) { message.error(e.userMessage || String(e)); }
     finally { setBusy(false); }
@@ -105,6 +122,21 @@ function SubmitProductModal({ assignmentId, product, open, onClose, onDone }) {
             <Button icon={<UploadOutlined />}>选择日志包</Button>
           </Upload>
         </Form.Item>
+        {humanAsserts.length > 0 && (
+          <Form.Item label="人工核对客观事实(末态,脚本读不了,必须你确认)" required
+            extra="这些是只能人眼确认的末态(如消息真发出没)。据实勾选 —— 没做到就别勾,不勾即判未达成。">
+            <Space direction="vertical">
+              {humanAsserts.map((a) => (
+                <Form.Item key={a.key} name={`ha_${a.key}`} valuePropName="checked"
+                  noStyle>
+                  <Checkbox>
+                    {a.desc}{a.primary ? <Tag color="red" style={{ marginLeft: 6 }}>主目标</Tag> : null}
+                  </Checkbox>
+                </Form.Item>
+              ))}
+            </Space>
+          </Form.Item>
+        )}
         <Form.Item name="transcript" label="过程摘录(可选)">
           <Input.TextArea rows={2} placeholder="关键步骤/异常的简述" />
         </Form.Item>

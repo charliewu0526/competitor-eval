@@ -73,7 +73,9 @@ class FilterTasks(unittest.TestCase):
 
     def test_filter_by_app_drops_nonmatch(self):
         tasks = SUITE.discover_tasks()
-        self.assertEqual(SUITE.filter_tasks(tasks, app="capcut"), [])
+        # 用一个任务库里绝不存在的 app 名, 验证「不匹配则全丢」的过滤语义。
+        # (原先用 capcut, 但任务库补题后已有 capcut 题 T12/T13, 换个哨兵值。)
+        self.assertEqual(SUITE.filter_tasks(tasks, app="no-such-app-xyz"), [])
 
     def test_no_filter_returns_all(self):
         tasks = SUITE.discover_tasks()

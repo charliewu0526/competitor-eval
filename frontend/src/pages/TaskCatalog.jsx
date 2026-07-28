@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Card, Collapse, Segmented, Tag, Typography, Spin, Empty, Space, Alert,
+  Button, message,
 } from "antd";
-import { getCatalog } from "../api.js";
+import { ThunderboltOutlined } from "@ant-design/icons";
+import { getCatalog, claimFromCatalog } from "../api.js";
+import { useAuth } from "../auth.jsx";
 
 const { Paragraph, Text } = Typography;
 
@@ -28,9 +32,21 @@ function CompetitorTags({ competitors }) {
   );
 }
 
-function TaskPanel({ task }) {
+function TaskPanel({ task, canClaim, onClaim, claiming }) {
   return (
     <div>
+      {canClaim && (
+        <div style={{ marginBottom: 12 }}>
+          <Button type="primary" icon={<ThunderboltOutlined />}
+            loading={claiming} onClick={() => onClaim(task.task_id)}>
+            领取这道题
+          </Button>
+          <Text type="secondary" style={{ marginLeft: 10 }}>
+            领取 = 领它<Text strong>整组同域竞品对打</Text>({task.participating?.join(" / ") || "—"}),
+            领后去『我的任务』给每个产品各交一份产物。
+          </Text>
+        </div>
+      )}
       <Paragraph type="secondary" style={{ marginBottom: 8 }}>
         <Text strong>能力域:</Text> {task.capability_domain} ·{" "}
         <Text strong>性质:</Text> {task.task_nature} ·{" "}
@@ -74,13 +90,30 @@ function TaskPanel({ task }) {
 }
 
 export default function TaskCatalog() {
+  const nav = useNavigate();
+  const { user } = useAuth();
+  const canClaim = !!user;   // 任意已登录用户(intern 起)都能自助领取
   const [groups, setGroups] = useState(null);
   const [err, setErr] = useState(null);
   const [domain, setDomain] = useState("全部");
+  const [claiming, setClaiming] = useState(null);
 
   useEffect(() => {
     getCatalog().then(setGroups).catch((e) => setErr(e.userMessage || String(e)));
   }, []);
+
+  const onClaim = async (taskId) => {
+    setClaiming(taskId);
+    try {
+      await claimFromCatalog(taskId);
+      message.success("已领取,去『我的任务』给每个产品交产物");
+      nav("/assignments");
+    } catch (e) {
+      message.warning(e.userMessage || String(e));
+    } finally {
+      setClaiming(null);
+    }
+  };
 
   const options = useMemo(() => {
     if (!groups) return ["全部"];
@@ -97,8 +130,9 @@ export default function TaskCatalog() {
   return (
     <div>
       <Typography.Paragraph type="secondary">
-        按<Text strong>能力域</Text>分组的任务清单 —— 同域才同台。浏览未领取的题、
-        看该发的中立标准 Prompt 与同域参赛竞品。领取任务在后续切片开放。
+        按<Text strong>能力域</Text>分组的任务清单 —— 同域才同台。展开任一道题即可看
+        中立标准 Prompt、同域参赛竞品,并直接<Text strong>领取这道题</Text>。
+        领取后系统把它锁给你,去『我的任务』给组内每个产品各交一份产物。
       </Typography.Paragraph>
 
       <Segmented
@@ -124,7 +158,8 @@ export default function TaskCatalog() {
                   <Text type="secondary">— {t.prompt.slice(0, 48)}…</Text>
                 </span>
               ),
-              children: <TaskPanel task={t} />,
+              children: <TaskPanel task={t} canClaim={canClaim}
+                onClaim={onClaim} claiming={claiming === t.task_id} />,
             }))}
           />
         </Card>

@@ -39,7 +39,19 @@ def derive_gate(can_operate_local_desktop: bool,
 
 
 def gate_for(competitor, task) -> str:
-    """Convenience: derive the gate for a Competitor (F2) on a TaskSpec (F1)."""
+    """Convenience: derive the gate for a Competitor (F2) on a TaskSpec (F1).
+
+    两级推导 (PRD-0003 竞品归域, #36 方向):
+      1. 若竞品登记了 capability_domains (非空), 先按域收窄: 任务的
+         capability_domain 不在竞品覆盖域内 -> cannot-reach (该竞品不主打这个
+         能力域, 没参赛 != 差, 立身之本 corollary)。空 domains => 跳过这级,
+         退回旧的纯布尔推导 (向后兼容 v1 种子/测试)。
+      2. 域内 (或未登记域) 再按 can_operate_local_desktop × requires_local_desktop
+         推导 —— 云端产品碰需本地桌面的题仍诚实判 cannot-reach。
+    """
+    domains = getattr(competitor, "capability_domains", None) or []
+    if domains and getattr(task, "capability_domain", None) not in domains:
+        return "cannot-reach"
     return derive_gate(competitor.can_operate_local_desktop,
                        task.requires_local_desktop)
 

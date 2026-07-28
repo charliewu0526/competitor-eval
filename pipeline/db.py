@@ -125,14 +125,41 @@ def connect_url(url: str):
         raise RuntimeError(
             "DATABASE_URL 指向 Postgres 但未安装驱动。请 `pip install pg8000` "
             "(纯 Python, 无需编译)。") from e
-    from urllib.parse import urlparse, unquote
+    from urllib.parse import urlparse, unquote, parse_qs
     p = urlparse(url)
+    db_name = (p.path or "/").lstrip("/") or None
+    # pgserver / 本地自托管走 unix socket: host 以 ?host=/dir 或 host 段是目录路径给出。
+    # pg8000 用 unix_sock 参数(指向 .s.PGSQL.<port> 文件)连 socket, 而非 TCP。
+    qs = parse_qs(p.query or "")
+    sock_dir = None
+    if qs.get("host") and qs["host"][0].startswith("/"):
+        sock_dir = qs["host"][0]
+    elif p.hostname and p.hostname.startswith("/"):
+        sock_dir = p.hostname
+    elif p.query and "%2F" in (p.query or "") and "host=" in p.query:
+        sock_dir = unquote(p.query.split("host=", 1)[1].split("&", 1)[0])
+    if sock_dir:
+        import pathlib as _pl
+        port = p.port or 5432
+        # 找 socket 文件: 优先声明端口, 否则取目录里唯一的 .s.PGSQL.*
+        cand = _pl.Path(sock_dir) / f".s.PGSQL.{port}"
+        if not cand.exists():
+            hits = sorted(_pl.Path(sock_dir).glob(".s.PGSQL.*"))
+            if hits:
+                cand = hits[0]
+        raw = pg.connect(
+            user=unquote(p.username) if p.username else "postgres",
+            password=unquote(p.password) if p.password else None,
+            database=db_name or "postgres",
+            unix_sock=str(cand),
+        )
+        return _PGConn(raw)
     raw = pg.connect(
         user=unquote(p.username) if p.username else None,
         password=unquote(p.password) if p.password else None,
         host=p.hostname or "127.0.0.1",
         port=p.port or 5432,
-        database=(p.path or "/").lstrip("/") or None,
+        database=db_name,
     )
     return _PGConn(raw)
 

@@ -13,7 +13,7 @@ import json
 from typing import Literal
 
 from fastapi import (FastAPI, HTTPException, Header, Depends, UploadFile, File,
-                     Form)
+                     Form, BackgroundTasks)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -460,6 +460,44 @@ def claim_assignment(assignment_id: str, user=rbac("claim_assignment")):
     return _assignment_view(a)
 
 
+class CatalogClaimIn(BaseModel):
+    task_id: str
+
+
+@app.post("/api/catalog/{task_id}/claim")
+def claim_from_catalog(task_id: str, user=rbac("claim_assignment")):
+    """intern 在任务清单页直接领一道题 (PRD story 8: 自助领取)。
+
+    一步到位打通 story 8「浏览未被领取的任务并领一道」: 把「铸造成可领取单元」
+    从 owner 独占的手动前置动作降为领取的**内部副作用** —— intern 点「领取」,
+    系统自动 materialize(幂等, 同题复用原单) 再 claim(原子锁)。铸造本身不落
+    manage_task_catalog 权限门 (它是领取的一部分, 不是清单维护), 但领取仍需
+    claim_assignment 权限, 且并发/重复领取由 store 原子锁兜底。
+
+    材料: 铸造失败(题不在清单/全 cannot-reach) -> 400; 已被别人领 -> 409。
+    """
+    con = _con()
+    try:
+        a = ASSIGN.materialize_for_task(con, task_id)
+    except ASSIGN.AssignmentError as e:
+        raise HTTPException(400, str(e))
+    # 已被领取(claimed/submitted): 给人话提示, 不静默失败。
+    if a["status"] != "open":
+        who = a.get("claimed_by")
+        mine = who == user["id"]
+        raise HTTPException(
+            409,
+            f"这道题已被你领取,去『我的任务』继续。" if mine
+            else f"这道题已被 {who} 领取,换一道吧。")
+    try:
+        a = ASSIGN.claim(con, a["id"], user["id"])
+    except ASSIGN.IllegalTransition as e:
+        raise HTTPException(409, str(e))
+    except ASSIGN.AssignmentError as e:
+        raise HTTPException(404, str(e))
+    return _assignment_view(a)
+
+
 @app.post("/api/assignments/{assignment_id}/abandon")
 def abandon_assignment(assignment_id: str, user=rbac("claim_assignment")):
     """放弃已领取的 Assignment -> 回到清单可被再领 (story 12)。仅持有者可放弃。"""
@@ -473,6 +511,35 @@ def abandon_assignment(assignment_id: str, user=rbac("claim_assignment")):
         code = 404 if "不存在" in str(e) else 403
         raise HTTPException(code, str(e))
     return _assignment_view(a)
+
+
+def _read_artifact_summary(artifact_path, *, max_chars: int = 4000) -> str:
+    """把上传的原始产物读成一段可喂评审面板的文本摘要 (走查头号硬伤的修复).
+
+    文本产物(titles.txt / .md / .csv / .json 等)直读并截断; 二进制(截图/xlsx)
+    只给文件名 + 大小说明(面板据此知道"有产物"而非误判"没做"); 缺失/读不动
+    安全降级为 (none)。绝不因读产物失败而阻塞收口。
+    """
+    import pathlib as _p
+    if not artifact_path:
+        return "(none)"
+    try:
+        p = _p.Path(artifact_path).expanduser()
+        if not p.exists():
+            return "(none)"
+        data = p.read_bytes()
+        if not data:
+            return "(empty file)"
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return f"(binary artifact: {p.name}, {len(data)} bytes)"
+        text = text.strip()
+        if len(text) > max_chars:
+            text = text[:max_chars] + f"\n…(truncated, total {len(text)} chars)"
+        return f"[artifact {p.name}]\n{text}"
+    except OSError:
+        return "(none)"
 
 
 def _score_assignment_into_board(con, assignment_id: str) -> dict:
@@ -495,27 +562,69 @@ def _score_assignment_into_board(con, assignment_id: str) -> dict:
     if lt is None:
         return {"status": "skipped", "reason": f"任务 {task_id} 不在任务库"}
     # 2. 把该 Assignment 每个产品的 Submission 读回, adapt 成 intake.Submission。
+    #    同时把每个产品上传的**原始产物内容**读出来做成 artifact_summary,
+    #    这是评审面板判「做没做成」的核心证据——不喂产物, 面板只见日志包会把明明
+    #    做对的任务全判成「无产物/没做」(走查发现的头号硬伤)。
     subs = []
+    ctx_by_product = {}
     for row in store.submissions_for(con, assignment_id):
         row = dict(row)
         row.setdefault("task_id", task_id)
         subs.append(_IntakeSubmission.from_store_row(row))
+        ctx_by_product[row["product"]] = {
+            "artifact_summary": _read_artifact_summary(row.get("artifact_path")),
+            "screenshots_note": row.get("transcript_excerpt", "") or "(none)",
+        }
     if not subs:
         return {"status": "skipped", "reason": "无 submission 可评分"}
     # 3. 独立盲评 -> 落 runs + scores (真实评审面板, REVIEW_PANEL 决定成员)。
+    #    ctx_by_product 把产物内容送进面板上下文(经 blind_panel 脱敏后再喂模型)。
     reg = REG.default_registry()
-    blind = BP.score_submissions(subs, lt, reg)
+    blind = BP.score_submissions(subs, lt, reg, ctx_by_product=ctx_by_product)
     BP.persist_blind_scores(con, blind)
+
+    # 4. 收口重评 => 重新生成发现池 (走查 BUG-2/3 修复)。
+    #    先清同 task 旧 findings (上一轮旧竞品集的残留会造成「幽灵竞品」+ 与本轮
+    #    产物不符的 defect), 再按**本轮**scores 重新 classify —— 发现池永远只反映
+    #    最近一次评测的真实产物, 不与历史脏数据混显。evidence 喂产物摘要, 供机理挖掘。
+    store.delete_findings_for_task(con, task_id)
+    scores = [b.score for b in blind]
+    evidence = {}
+    for b in blind:
+        summary = ctx_by_product.get(b.product, {}).get("artifact_summary", "")
+        evidence[b.product] = [{"source": "artifact",
+                                "ref": (summary or "")[:200]}]
+    finds = F.classify(task_id, scores, evidence=evidence)
+    for fnd in finds:
+        store.upsert_finding(con, fnd)
     return {"status": "scored", "products": [b.product for b in blind],
-            "count": len(blind)}
+            "count": len(blind), "findings": len(finds)}
+
+
+def _score_assignment_bg(assignment_id: str) -> None:
+    """后台评分任务: 独立开连接跑整组盲评入榜, 与收口请求解耦。
+
+    盲评面板真打多模型 (30-90s), 若同步跑, 多实习生并发提交会各占一个请求 worker
+    半分钟以上, 拖垮前台。改为 BackgroundTask: 收口请求秒返 (状态已翻 submitted),
+    评分在后台完成后落 runs/scores, 榜单随后出分。失败只记日志, 不影响已交付的活。
+    """
+    import logging
+    try:
+        con = _con()
+        _score_assignment_into_board(con, assignment_id)
+    except Exception:  # noqa: BLE001
+        logging.getLogger("competitor-eval").exception(
+            "后台自动评分失败 assignment=%s", assignment_id)
 
 
 @app.post("/api/assignments/{assignment_id}/submit")
-def submit_assignment(assignment_id: str, user=rbac("submit")):
+def submit_assignment(assignment_id: str, background: BackgroundTasks,
+                      user=rbac("submit")):
     """把已领取的 Assignment 标记 submitted (claimed -> submitted)。仅持有者可交。
 
-    收口成功后自动触发整组评分入榜 (#43 AC4 接线): 评分失败不阻塞收口,
-    只在返回体的 score_status 里如实透传, 供前端提示「已交付, 评分稍后重试」。
+    收口成功后**异步**触发整组评分入榜 (#43 AC4 接线): 评分在后台跑, 收口请求
+    立即返回 score_status='scoring'(评分进行中), 前端据此提示「已交付, 评分进行中,
+    稍后刷新榜单」。多实习生并发提交互不阻塞 (评分不再占前台 worker)。
     """
     con = _con()
     try:
@@ -525,15 +634,11 @@ def submit_assignment(assignment_id: str, user=rbac("submit")):
     except ASSIGN.AssignmentError as e:
         code = 404 if "不存在" in str(e) else 403
         raise HTTPException(code, str(e))
-    # 收口即评分入榜 —— 失败兜底, 绝不回滚已交付的活。
-    try:
-        score_status = _score_assignment_into_board(con, assignment_id)
-    except Exception as e:  # noqa: BLE001 (评分抖动不能让收口失败)
-        import logging
-        logging.getLogger("competitor-eval").exception("收口后自动评分失败")
-        score_status = {"status": "error", "reason": str(e)}
+    # 收口即返回, 评分丢后台 —— 面板慢不拖垮前台, 也绝不回滚已交付的活。
+    background.add_task(_score_assignment_bg, assignment_id)
     view = _assignment_view(a)
-    view["score_status"] = score_status
+    view["score_status"] = {"status": "scoring",
+                            "reason": "评分进行中, 稍后刷新榜单查看结果"}
     return view
 
 

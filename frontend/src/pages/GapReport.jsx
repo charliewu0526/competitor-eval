@@ -6,6 +6,7 @@ import {
 import {
   RiseOutlined, FallOutlined, GithubOutlined, WarningOutlined,
 } from "@ant-design/icons";
+import { Link } from "react-router-dom";
 import { getGapReportTasks, getGapReport } from "../api";
 import { InfoTip } from "../glossary.jsx";
 
@@ -173,6 +174,9 @@ export default function GapReport() {
         机器挑出的发现,以及开源竞品的源码机理。机器只摆事实、标差距,
         要不要补齐由 PM 拍板。够不着环境的产品标「未参赛」,不会被冤枉打 0 分。
       </p>
+      <Alert type="info" showIcon style={{ marginBottom: 16 }}
+        message={<span>看清差距后,去<Link to="/methods"><b>方法沉淀</b></Link>把它写成方法初稿 → 把关 → 导出给研发。</span>} />
+
 
       {taskList.length === 0 ? (
         <Card>

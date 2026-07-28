@@ -6,24 +6,69 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "reachable_envs": []
+    "capability_domains": ["wechat-im", "office-suite", "no-api-app", "computer-control", "browser-web"]
   },
   {
-    "id": "open_interpreter",
-    "display_name": "Open Interpreter",
-    "can_operate_local_desktop": true,
-    "is_open_source": true,
-    "repo": "https://github.com/OpenInterpreter/open-interpreter",
-    "status": "active",
-    "reachable_envs": []
-  },
-  {
-    "id": "simular",
-    "display_name": "Simular",
+    "id": "claude",
+    "display_name": "Claude Computer Use",
     "can_operate_local_desktop": true,
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "reachable_envs": []
+    "capability_domains": ["wechat-im", "office-suite", "no-api-app", "computer-control", "browser-web"]
+  },
+  {
+    "id": "codex",
+    "display_name": "OpenAI Codex",
+    "can_operate_local_desktop": true,
+    "is_open_source": false,
+    "repo": null,
+    "status": "active",
+    "capability_domains": ["computer-control", "browser-web"]
+  },
+  {
+    "id": "manus",
+    "display_name": "Manus",
+    "can_operate_local_desktop": true,
+    "is_open_source": false,
+    "repo": null,
+    "status": "active",
+    "capability_domains": ["computer-control", "browser-web", "office-suite"]
+  },
+  {
+    "id": "kimi",
+    "display_name": "Kimi",
+    "can_operate_local_desktop": false,
+    "is_open_source": false,
+    "repo": null,
+    "status": "active",
+    "capability_domains": ["browser-web", "office-suite"]
+  },
+  {
+    "id": "codebuddy",
+    "display_name": "CodeBuddy (\u817e\u8baf\u4e91\u4ee3\u7801\u52a9\u624b)",
+    "can_operate_local_desktop": true,
+    "is_open_source": false,
+    "repo": null,
+    "status": "active",
+    "capability_domains": ["computer-control", "browser-web", "office-suite"]
+  },
+  {
+    "id": "openai_operator",
+    "display_name": "OpenAI Operator",
+    "can_operate_local_desktop": false,
+    "is_open_source": false,
+    "repo": null,
+    "status": "active",
+    "capability_domains": ["browser-web"]
+  },
+  {
+    "id": "google_mariner",
+    "display_name": "Google Project Mariner",
+    "can_operate_local_desktop": false,
+    "is_open_source": false,
+    "repo": null,
+    "status": "active",
+    "capability_domains": ["browser-web"]
   }
 ]

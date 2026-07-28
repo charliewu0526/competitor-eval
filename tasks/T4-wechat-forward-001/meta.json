@@ -1,0 +1,35 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T4-wechat-forward-001",
+    "domain": "1",
+    "app": "wechat",
+    "prompt": "Open WeChat, find the most recent file '季度预算.xlsx' that '张伟' sent you, and forward it to the group named '财务组'. Do not forward anything else.",
+    "core_assertions": [
+      "primary: the file was forwarded to '财务组'",
+      "primary: it is the correct file '季度预算.xlsx'",
+      "secondary: no other chat received the file"
+    ],
+    "expects_file": false,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "wechat-im",
+    "task_nature": "simple"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded simple task for wechat-im."
+  },
+  "assertions_module": "tasks.T4_wechat_forward_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

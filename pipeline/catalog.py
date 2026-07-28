@@ -48,6 +48,29 @@ def _competitor_entry(comp, task_spec) -> dict:
     }
 
 
+def _human_assertions(loaded) -> list[dict]:
+    """抽出该题**只能人看**的客观断言 (HUMAN kind), 给提交表单渲染勾选框用。
+
+    走查 BUG-1 修复: 微信/桌面类任务的核心判定点是脚本读不了的末态 (消息真发出没),
+    必须由受训 intern 勾选。这里把这些断言的 {key, desc, primary} 暴露给前端, 前端据
+    此渲染勾选框, 提交时组装成 manual_assertions —— 否则 intake 收不到人工断言,
+    manual 断言型任务恒判 0 分 (走查头号阻断 bug)。机器可验断言 (MACHINE) 不在此列
+    (它们由脚本从产物/日志自动判, 不落人手, 立身之本)。
+    """
+    fn = getattr(loaded, "assertions", None)
+    if not callable(fn):
+        return []
+    out = []
+    try:
+        for a in fn():
+            if getattr(a, "kind", None) == "human" and getattr(a, "ctx_key", None):
+                out.append({"key": a.ctx_key, "desc": a.desc,
+                            "primary": bool(a.primary)})
+    except Exception:
+        return []
+    return out
+
+
 def _task_card(loaded, registry) -> dict:
     """把一个 discover 出来的 LoadedTask 拼成给人看的清单卡片."""
     s = loaded.task_spec
@@ -68,6 +91,7 @@ def _task_card(loaded, registry) -> dict:
         "requires_local_desktop": s.requires_local_desktop,
         "prompt": s.prompt,                 # 中立标准 Prompt (ADR-0016)
         "core_assertions": list(s.core_assertions),
+        "human_assertions": _human_assertions(loaded),  # 人工勾选断言(提交表单用)
         "expects_file": s.expects_file,
         "readme": readme,                   # 详细说明 (人读)
         "competitors": competitors,         # 全部产品 + 各自 GATE

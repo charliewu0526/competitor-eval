@@ -1,0 +1,35 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T9-excel-merge-pivot-001",
+    "domain": "1",
+    "app": "excel",
+    "prompt": "Open input/sales-by-region/*.xlsx (12 monthly files). Merge them into one sheet, then build a pivot table of total revenue by region and quarter. Save as output/pivot.xlsx.",
+    "core_assertions": [
+      "primary: output workbook was produced",
+      "primary: all 12 months are merged with no rows lost",
+      "primary: pivot shows revenue by region x quarter"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "office-suite",
+    "task_nature": "long-horizon"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded long-horizon task for office-suite."
+  },
+  "assertions_module": "tasks.T9_excel_merge_pivot_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T6-wechat-schedule-001",
+    "domain": "1",
+    "app": "wechat",
+    "prompt": "Every workday at 18:00, send the message '今日工作已完成，日报已更新' to the contact '文件传输助手'. Set this up to run on schedule today.",
+    "core_assertions": [
+      "primary: a scheduled/timed send was set up",
+      "primary: a schedule registration event exists in the log",
+      "secondary: the message content is exactly correct"
+    ],
+    "expects_file": false,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "wechat-im",
+    "task_nature": "scheduled"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded scheduled task for wechat-im."
+  },
+  "assertions_module": "tasks.T6_wechat_schedule_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}

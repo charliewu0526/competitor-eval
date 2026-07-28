@@ -33,6 +33,7 @@ import pathlib
 from pipeline.schema import COST_SOURCE_VALUES
 
 UNAVAILABLE = "unavailable"
+NATIVE = "native"
 DEFAULT_PRICE_TABLE = pathlib.Path(__file__).resolve().parent / "model_prices.json"
 
 # token usage is denominated per MILLION tokens in the price table.
@@ -126,6 +127,13 @@ class CostAccountant:
             return _result(in_tok=input_tokens, out_tok=output_tokens,
                            calls=model_calls, cost_usd=None,
                            cost_source=UNAVAILABLE, model=model,
+                           price_updated=self.prices.updated)
+        if cost_source == NATIVE:
+            # 自家原生产品无 LLM 环路: 零成本是可核查事实, 记 cost_usd=0.0 (priced=True),
+            # 既不谎称 self-report, 也不标 unavailable(那是"拿不到", 会被误读成很省)。
+            return _result(in_tok=input_tokens, out_tok=output_tokens,
+                           calls=model_calls, cost_usd=0.0,
+                           cost_source=NATIVE, model=model,
                            price_updated=self.prices.updated)
         usd = (self.prices.cost_usd(model, input_tokens, output_tokens)
                if model else None)

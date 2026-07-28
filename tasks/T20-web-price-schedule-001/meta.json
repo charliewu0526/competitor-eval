@@ -1,0 +1,35 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "T20-web-price-schedule-001",
+    "domain": "1",
+    "app": "browser",
+    "prompt": "Set up a task that checks the price of the product at input/target-url.txt every morning at 09:00 and appends '{date},{price}' to output/price-history.csv.",
+    "core_assertions": [
+      "primary: a daily price-check schedule was registered",
+      "primary: it extracts the correct price element",
+      "secondary: it appends to the CSV in the right format"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "browser-web",
+    "task_nature": "scheduled"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "Auto-seeded scheduled task for browser-web."
+  },
+  "assertions_module": "tasks.T20_web_price_schedule_001",
+  "files": {
+    "input": "input/ — starting materials (may be faked)",
+    "expected": "expected/end-state.md — correct outcome",
+    "output": "output/ — per-run product artifacts",
+    "evidence": "evidence/ — logs / screenshots / recordings"
+  }
+}
