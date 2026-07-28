@@ -6,8 +6,9 @@ import {
 import { ExperimentOutlined, SaveOutlined } from "@ant-design/icons";
 import { getProbes, getEnums, postJudgment } from "../api";
 import { InfoTip } from "../glossary.jsx";
+import { useAuth } from "../auth.jsx";
 
-function ProbeCard({ p, enums, onSaved }) {
+function ProbeCard({ p, enums, onSaved, canReview }) {
   const [pj, setPj] = useState(p.product_judgment || undefined);
   const [fc, setFc] = useState(p.final_category || undefined);
   const [saving, setSaving] = useState(false);
@@ -82,29 +83,35 @@ function ProbeCard({ p, enums, onSaved }) {
         </Descriptions>
       )}
 
-      <Row gutter={12} align="bottom">
-        <Col span={9}>
-          <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 4 }}>产品判断(你来定)</div>
-          <Select style={{ width: "100%" }} allowClear placeholder="必须补齐 / 值得借鉴 / …"
-            value={pj} onChange={setPj}
-            options={(enums.product_judgment || []).map((v) => ({ value: v, label: v }))} />
-        </Col>
-        <Col span={9}>
-          <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 4 }}>最终分类(你来定)</div>
-          <Select style={{ width: "100%" }} allowClear placeholder="bug / feature-gap / …"
-            value={fc} onChange={setFc}
-            options={(enums.final_category || []).map((v) => ({ value: v, label: v }))} />
-        </Col>
-        <Col span={6}>
-          <Button type="primary" icon={<SaveOutlined />} loading={saving}
-            disabled={!dirty} onClick={save} block>保存</Button>
-        </Col>
-      </Row>
+      {canReview ? (
+        <Row gutter={12} align="bottom">
+          <Col span={9}>
+            <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 4 }}>产品判断(你来定)</div>
+            <Select style={{ width: "100%" }} allowClear placeholder="必须补齐 / 值得借鉴 / …"
+              value={pj} onChange={setPj}
+              options={(enums.product_judgment || []).map((v) => ({ value: v, label: v }))} />
+          </Col>
+          <Col span={9}>
+            <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 4 }}>最终分类(你来定)</div>
+            <Select style={{ width: "100%" }} allowClear placeholder="bug / feature-gap / …"
+              value={fc} onChange={setFc}
+              options={(enums.final_category || []).map((v) => ({ value: v, label: v }))} />
+          </Col>
+          <Col span={6}>
+            <Button type="primary" icon={<SaveOutlined />} loading={saving}
+              disabled={!dirty} onClick={save} block>保存</Button>
+          </Col>
+        </Row>
+      ) : (
+        <Tag color="default">定判由审核员/PM 处理(你是实习生,只读)</Tag>
+      )}
     </Card>
   );
 }
 
 export default function Probes() {
+  const { user } = useAuth();
+  const canReview = user?.role === "reviewer" || user?.role === "owner";
   const [rows, setRows] = useState(null);
   const [enums, setEnums] = useState({});
   const [err, setErr] = useState(null);
@@ -124,7 +131,7 @@ export default function Probes() {
       {rows.length === 0 ? (
         <Card><Empty description="还没有能力专项。跑 pipeline 的 probe(如 PB-token-001)后这里会出现对打结果。" /></Card>
       ) : (
-        rows.map((p) => <ProbeCard key={p.id} p={p} enums={enums} onSaved={load} />)
+        rows.map((p) => <ProbeCard key={p.id} p={p} enums={enums} onSaved={load} canReview={canReview} />)
       )}
     </div>
   );

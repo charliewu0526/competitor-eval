@@ -7,6 +7,7 @@ import {
 } from "@ant-design/icons";
 import { getSpotcheck, rebuildSpotcheck, postVerdict } from "../api";
 import { InfoTip } from "../glossary.jsx";
+import { useAuth } from "../auth.jsx";
 
 const STRATUM = {
   "high-risk": { label: "🔴 高风险(必查 100%)", color: "red" },
@@ -19,7 +20,7 @@ function stratumTag(s) {
   return <Tag color={t.color}>{t.label}</Tag>;
 }
 
-function ItemCard({ it, onDone }) {
+function ItemCard({ it, onDone, canReview }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -41,21 +42,30 @@ function ItemCard({ it, onDone }) {
       <p style={{ marginTop: 0 }}>
         <b>为什么进队列:</b> <span style={{ color: "#595959" }}>{it.reason}</span>
       </p>
-      <Space.Compact style={{ width: "100%", marginBottom: 12 }}>
-        <Input placeholder="抽查备注(可选)" value={note}
-          onChange={(e) => setNote(e.target.value)} />
-      </Space.Compact>
-      <Space>
-        <Button icon={<CheckCircleOutlined />} loading={busy}
-          onClick={() => verdict("ok")}>一致(机器判对了)</Button>
-        <Button danger icon={<WarningOutlined />} loading={busy}
-          onClick={() => verdict("anomaly")}>异常 → 触发重新校准</Button>
-      </Space>
+      {canReview ? (
+        <>
+          <Space.Compact style={{ width: "100%", marginBottom: 12 }}>
+            <Input placeholder="抽查备注(可选)" value={note}
+              onChange={(e) => setNote(e.target.value)} />
+          </Space.Compact>
+          <Space>
+            <Button icon={<CheckCircleOutlined />} loading={busy}
+              onClick={() => verdict("ok")}>一致(机器判对了)</Button>
+            <Button danger icon={<WarningOutlined />} loading={busy}
+              onClick={() => verdict("anomaly")}>异常 → 触发重新校准</Button>
+          </Space>
+        </>
+      ) : (
+        <Tag color="default">抽查裁定由审核员/PM 处理(你是实习生,只读)</Tag>
+      )}
     </Card>
   );
 }
 
 export default function SpotCheck() {
+  const { user } = useAuth();
+  const canReview = user?.role === "reviewer" || user?.role === "owner";
+  const isOwner = user?.role === "owner";
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState(null);
   const [rebuilding, setRebuilding] = useState(false);
@@ -83,10 +93,12 @@ export default function SpotCheck() {
         普通随机 10%、矛盾/高风险 100%。发现异常会触发 AI 评委重新校准。
       </p>
 
-      <Button type="primary" icon={<ReloadOutlined />} loading={rebuilding}
-        onClick={rebuild} style={{ marginBottom: 16 }}>
-        重建抽查队列(扫库分层采样)
-      </Button>
+      {isOwner && (
+        <Button type="primary" icon={<ReloadOutlined />} loading={rebuilding}
+          onClick={rebuild} style={{ marginBottom: 16 }}>
+          重建抽查队列(扫库分层采样)
+        </Button>
+      )}
 
       {!rows ? <Spin size="large" style={{ display: "block", margin: "40px auto" }} />
         : rows.length === 0 ? (
@@ -94,7 +106,7 @@ export default function SpotCheck() {
         ) : (
           <>
             <p style={{ color: "#8c8c8c" }}>待抽查 {rows.length} 项(高风险/矛盾排在前):</p>
-            {rows.map((it) => <ItemCard key={it.id} it={it} onDone={load} />)}
+            {rows.map((it) => <ItemCard key={it.id} it={it} onDone={load} canReview={canReview} />)}
           </>
         )}
     </div>

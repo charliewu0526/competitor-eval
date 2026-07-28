@@ -6,6 +6,7 @@ import {
 import { BugOutlined, SaveOutlined } from "@ant-design/icons";
 import { getFindings, getEnums, postJudgment } from "../api";
 import { InfoTip } from "../glossary.jsx";
+import { useAuth } from "../auth.jsx";
 
 // suspected_category -> 中文主标签 + 颜色语义(颜色即语义)
 const SUSPECTED = {
@@ -71,7 +72,7 @@ function metricLine(e, i) {
     </List.Item>
   );
 }
-function FindingCard({ f, enums, onSaved }) {
+function FindingCard({ f, enums, onSaved, canReview }) {
   const [pj, setPj] = useState(f.product_judgment || undefined);
   const [fc, setFc] = useState(f.final_category || undefined);
   const [saving, setSaving] = useState(false);
@@ -171,39 +172,54 @@ function FindingCard({ f, enums, onSaved }) {
         <p style={{ color: "#8c8c8c", marginTop: 0 }}>没有附证据。</p>
       )}
 
-      <Row gutter={12} align="bottom" style={{ marginTop: 12 }}>
-        <Col span={9}>
-          <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 4 }}>
-            产品判断 <InfoTip title="PM 的产品决策:这条发现对 Violoop 意味着什么(必须补齐 / 值得借鉴 / 观察中 / 不适合)。" />
-          </div>
-          <Select
-            style={{ width: "100%" }} allowClear placeholder="选产品判断"
-            value={pj} onChange={setPj}
-            options={(enums.product_judgment || []).map((v) => ({ value: v, label: v }))}
-          />
-        </Col>
-        <Col span={9}>
-          <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 4 }}>
-            最终分类 <InfoTip title="人工复核后的归类:bug / 功能缺口 / 体验借鉴 / 诚实度警示 / 不需处理。机器只给『疑似』,这里定案。" />
-          </div>
-          <Select
-            style={{ width: "100%" }} allowClear placeholder="选最终分类"
-            value={fc} onChange={setFc}
-            options={(enums.final_category || []).map((v) => ({ value: v, label: v }))}
-          />
-        </Col>
-        <Col span={6}>
-          <Button type="primary" icon={<SaveOutlined />} loading={saving}
-            disabled={!dirty} onClick={save} block>
-            保存
-          </Button>
-        </Col>
-      </Row>
+      {canReview ? (
+        <Row gutter={12} align="bottom" style={{ marginTop: 12 }}>
+          <Col span={9}>
+            <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 4 }}>
+              产品判断 <InfoTip title="PM 的产品决策:这条发现对 Violoop 意味着什么(必须补齐 / 值得借鉴 / 观察中 / 不适合)。" />
+            </div>
+            <Select
+              style={{ width: "100%" }} allowClear placeholder="选产品判断"
+              value={pj} onChange={setPj}
+              options={(enums.product_judgment || []).map((v) => ({ value: v, label: v }))}
+            />
+          </Col>
+          <Col span={9}>
+            <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 4 }}>
+              最终分类 <InfoTip title="人工复核后的归类:bug / 功能缺口 / 体验借鉴 / 诚实度警示 / 不需处理。机器只给『疑似』,这里定案。" />
+            </div>
+            <Select
+              style={{ width: "100%" }} allowClear placeholder="选最终分类"
+              value={fc} onChange={setFc}
+              options={(enums.final_category || []).map((v) => ({ value: v, label: v }))}
+            />
+          </Col>
+          <Col span={6}>
+            <Button type="primary" icon={<SaveOutlined />} loading={saving}
+              disabled={!dirty} onClick={save} block>
+              保存
+            </Button>
+          </Col>
+        </Row>
+      ) : (
+        <div style={{ marginTop: 12 }}>
+          {decided ? (
+            <Space wrap>
+              {f.product_judgment && <Tag color="blue">产品判断:{f.product_judgment}</Tag>}
+              {f.final_category && <Tag color="geekblue">最终分类:{f.final_category}</Tag>}
+            </Space>
+          ) : (
+            <Tag color="default">定判由审核员/PM 处理(你是实习生,只读)</Tag>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
 
 export default function Findings() {
+  const { user } = useAuth();
+  const canReview = user?.role === "reviewer" || user?.role === "owner";
   const [rows, setRows] = useState(null);
   const [enums, setEnums] = useState({});
   const [err, setErr] = useState(null);
@@ -256,7 +272,7 @@ export default function Findings() {
         </Card>
       ) : (
         shown.map((f) => (
-          <FindingCard key={f.id} f={f} enums={enums} onSaved={load} />
+          <FindingCard key={f.id} f={f} enums={enums} onSaved={load} canReview={canReview} />
         ))
       )}
     </div>
