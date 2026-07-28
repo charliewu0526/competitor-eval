@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset='utf-8'><title>注册</title></head>
+<body><h1>用户注册</h1>
+<form id='reg'>
+  姓名 <input name='name'><br>
+  邮箱 <input name='email'><br>
+  电话 <input name='phone'><br>
+  公司 <input name='company'><br>
+  <button type='submit'>提交</button>
+</form>
+<div id='ok' style='display:none'>注册成功!</div>
+<script>document.getElementById('reg').onsubmit=function(e){e.preventDefault();document.getElementById('ok').style.display='block';};</script>
+</body></html>
