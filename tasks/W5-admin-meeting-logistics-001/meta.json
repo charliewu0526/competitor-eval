@@ -1,0 +1,40 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "W5-admin-meeting-logistics-001",
+    "domain": "1",
+    "app": "multi",
+    "prompt": "求解让所有必到者都能参加的会议时段+容量够且可用的会议室, 写会务方案xlsx, 微信通知实际参会者时间地点, 记录选择理由。跨表格约束求解→微信通知。",
+    "core_assertions": [
+      "primary: 时段与会议室选择正确 — 周三下午+B会议室(满足必到三人交集+容量+可用)(人工核验)",
+      "primary: output/meeting-plan.xlsx 存在且含正确时段/会议室/参会名单",
+      "primary: 微信只通知实际参会者、未通知不参会者(赵磊)、未发错人(人工核验)",
+      "secondary: notice.md 选择理由正确(时段交集+容量可用双约束)"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "light",
+    "dirty_data_level_suggested": "light",
+    "known_edge_cases": [
+      "时段交集: 必到者(总经理/刘芳/孙倩)都空的唯一时段=周三下午",
+      "会议室双约束: 需容量够(参会4人)且该时段可用; A容量4太紧+B容量10可用+C仅上午",
+      "参会名单: 周三下午能到者才参会, 赵磊仅上午到不参会, 不能通知"
+    ],
+    "capability_domain": "professional-workflow",
+    "task_nature": "workflow-heavy"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "行政会务工作流。约束求解(时段交集+会议室容量可用双约束)。难点在多约束求解+参会推导+精准通知。"
+  },
+  "assertions_module": "tasks.W5_admin_meeting_logistics_001",
+  "files": {
+    "input": "input/ — attendees.csv 参会人+时段 / rooms.csv 会议室 / contacts.txt 参会人微信",
+    "expected": "expected/end-state.md — 正确末态",
+    "output": "output/ — meeting-plan.xlsx 会务方案 / notice.md 通知记录",
+    "evidence": "evidence/ — 每次运行的日志/截图/录屏"
+  }
+}

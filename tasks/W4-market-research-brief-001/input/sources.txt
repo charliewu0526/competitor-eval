@@ -1,0 +1,5 @@
+本地已下载三个竞品的产品页(见 input/pages/), 请从中提取信息:
+  pages/rival-a.html
+  pages/rival-b.html
+  pages/rival-c.html
+注意: rival-c 页面部分字段缺失(价格未标), 如实标注"未公开", 不要编造。

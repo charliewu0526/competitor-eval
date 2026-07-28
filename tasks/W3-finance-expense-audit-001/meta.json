@@ -1,0 +1,40 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "W3-finance-expense-audit-001",
+    "domain": "1",
+    "app": "multi",
+    "prompt": "按报销规则(须有票/招待≤8000/去重)审核报销申请, 先清洗金额脏数据(¥6,800), 通过的整理成xlsx, 打回的微信通知申请人并说明原因, 记录打回清单。跨表格审核→清洗→判断→微信通知。",
+    "core_assertions": [
+      "primary: 审核判断正确 — 通过李强/孙婷/郑楠(去重后), 打回吴迪(无票)/钱多(超额)/郑楠重复项(人工核验)",
+      "primary: output/approved.xlsx 存在且仅含正确通过项(金额已清洗为数字)",
+      "primary: 微信打回通知只发给被打回者、原因正确, 未发错人(人工核验)",
+      "secondary: rejected.md 每笔打回原因正确"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "heavy",
+    "dirty_data_level_suggested": "heavy",
+    "known_edge_cases": [
+      "金额脏数据: ¥6,800 带货币符号+千分位, 须清洗成 6800 再判断",
+      "重复项: 郑楠同人同类同额同日出现两次, 只算一笔, 第二笔打回",
+      "招待上限边界: 孙婷6800<8000通过, 钱多12000>8000打回; 无票(吴迪)一律打回"
+    ],
+    "capability_domain": "professional-workflow",
+    "task_nature": "workflow-heavy"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "财务审核工作流。脏数据=金额符号千分位+重复行(heavy)。难点在清洗+多规则+去重+边界判断。"
+  },
+  "assertions_module": "tasks.W3_finance_expense_audit_001",
+  "files": {
+    "input": "input/ — expenses.csv 报销申请 / budget.txt 预算与规则 / contacts.txt 申请人微信",
+    "expected": "expected/end-state.md — 正确末态",
+    "output": "output/ — approved.xlsx 通过清单 / rejected.md 打回记录",
+    "evidence": "evidence/ — 每次运行的日志/截图/录屏"
+  }
+}

@@ -43,6 +43,9 @@ class Competitor:
     #     非空 => GATE 先按域收窄参赛集 (不在竞品域内的题 = 不参赛, 非差),
     #     域内再尊重桌面可达性 (云端产品碰需本地桌面的题仍 cannot-reach)。
     capability_domains: list[str] = field(default_factory=list)
+    # --- 能力域判定依据 (2026-07 调研校准): 每个竞品为何登记这些域的一句话+证据,
+    #     防止事后没人记得当初凭什么这么标. 纯留痕字段, 不参与 GATE 推导. ---
+    notes: str | None = None
 
     def __post_init__(self) -> None:
         if not self.id:

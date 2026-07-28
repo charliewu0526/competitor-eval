@@ -1,0 +1,40 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "W2-hr-screening-schedule-001",
+    "domain": "1",
+    "app": "multi",
+    "prompt": "按 JD 硬性要求(经验>=3且技能=高且薪资<=40k)从候选表筛入围者, 跳过残缺行, 整理入围名单 xlsx, 再在微信给入围者发约面邀请, 记录初筛小结。跨表格筛选→判断→微信沟通。",
+    "core_assertions": [
+      "primary: 入围判断正确 — 恰好陈昊一人入围(王朔超预算被刷、林悦经验不足、赵雪技能低、残缺行跳过)(人工核验)",
+      "primary: output/shortlist.xlsx 存在且仅含正确入围者",
+      "primary: 微信约面只发给入围者(陈昊), 未发错人、未发未入围者(人工核验)",
+      "secondary: interviews.md 小结正确(候选4位有效/入围1位/淘汰理由)"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "light",
+    "dirty_data_level_suggested": "light",
+    "known_edge_cases": [
+      "多条硬性要求的与逻辑: 经验+技能+薪资三者同时满足才入围",
+      "超预算陷阱: 王朔经验技能都够但期望45k>预算40k, 必须刷掉",
+      "残缺行(周# 缺失, 字段空)是无效条目应跳过, 不能当候选人"
+    ],
+    "capability_domain": "professional-workflow",
+    "task_nature": "workflow-heavy"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "HR初筛工作流。脏数据=残缺行+超预算陷阱(light)。难点在多条件与逻辑判断+跨app约面。"
+  },
+  "assertions_module": "tasks.W2_hr_screening_schedule_001",
+  "files": {
+    "input": "input/ — candidates.csv 候选人打分材料 / jd.txt 岗位要求 / contacts.txt 候选人微信",
+    "expected": "expected/end-state.md — 正确末态",
+    "output": "output/ — shortlist.xlsx 入围名单 / interviews.md 约面记录",
+    "evidence": "evidence/ — 每次运行的日志/截图/录屏"
+  }
+}

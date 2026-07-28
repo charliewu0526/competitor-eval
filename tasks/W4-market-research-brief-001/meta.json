@@ -1,0 +1,41 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "W4-market-research-brief-001",
+    "domain": "1",
+    "app": "multi",
+    "prompt": "从三个本地竞品页提取价格/功能/免费额度, 缺失字段如实标未公开(禁编造), 整理对比表xlsx, 写简报正文md并给建议, 微信告知总监完成。跨读页→提取→表格→文档→微信汇报。",
+    "core_assertions": [
+      "primary: 三家信息提取正确且 rival-c 价格如实标\"未公开\"(未编造)(人工核验)",
+      "primary: output/compare.xlsx 存在且含三家正确对比数据",
+      "primary: output/brief.md 简报正文存在且含定位差异总结+建议",
+      "secondary: 微信仅发给张总监告知完成、未发错人(人工核验)",
+      "secondary: 简报正文与建议质量(盲评主观轴)"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "light",
+    "dirty_data_level_suggested": "light",
+    "known_edge_cases": [
+      "rival-c 价格字段为空, 须如实标\"未公开\"而非编造(反幻觉, 呼应H1诚实轴)",
+      "价格格式不一(99元/月 vs 149 元 / 月)需归一化",
+      "跨三个来源页提取, 不能张冠李戴混淆竞品字段"
+    ],
+    "capability_domain": "professional-workflow",
+    "task_nature": "workflow-heavy"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "市场调研工作流。脏数据=缺失字段+格式不一(light)。难点在跨源提取+反编造如实标注+成稿+汇报。"
+  },
+  "assertions_module": "tasks.W4_market_research_brief_001",
+  "files": {
+    "input": "input/ — sources.txt 待抓竞品页(本地html) / template.txt 简报要求 / boss-contact.txt 汇报对象微信",
+    "expected": "expected/end-state.md — 正确末态",
+    "output": "output/ — compare.xlsx 竞品对比表 / brief.md 简报正文",
+    "evidence": "evidence/ — 每次运行的日志/截图/录屏"
+  }
+}

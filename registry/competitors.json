@@ -6,7 +6,8 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["wechat-im", "office-suite", "no-api-app", "computer-control", "browser-web"]
+    "capability_domains": ["wechat-im", "office-suite", "no-api-app", "computer-control", "browser-web", "professional-workflow"],
+    "notes": "自家基准, 全域参赛(含跨app职业工作流)。原生本地桌面操控。"
   },
   {
     "id": "claude",
@@ -15,16 +16,18 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["wechat-im", "office-suite", "no-api-app", "computer-control", "browser-web"]
+    "capability_domains": ["wechat-im", "office-suite", "no-api-app", "computer-control", "browser-web", "professional-workflow"],
+    "notes": "调研2026-07: Cowork(2026.03)直控用户真实本地桌面, 无沙箱, 官方演示含无API应用(会计软件/iOS模拟器)。全5域+跨app工作流属实。证据 support.claude.com/articles/14128542。"
   },
   {
     "id": "codex",
-    "display_name": "OpenAI Codex",
+    "display_name": "OpenAI Codex (macOS 桌面版)",
     "can_operate_local_desktop": true,
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["computer-control", "browser-web"]
+    "capability_domains": ["computer-control", "browser-web"],
+    "notes": "调研2026-07校准: 仅 macOS 桌面版(2026.04 Computer Use)能控本地GUI; 云端版/CLI版官方明确不能(GitHub issue #16666)。登记按桌面版, 但主打软件工程非办公/IM, 无跨app职业工作流演示 -> 不登记 professional-workflow。Windows仅前台。"
   },
   {
     "id": "manus",
@@ -33,7 +36,8 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["computer-control", "browser-web", "office-suite"]
+    "capability_domains": ["computer-control", "browser-web", "office-suite"],
+    "notes": "调研2026-07: My Computer本地版(2026.03)有截图+鼠标键盘可computer-control, 但官方主打CLI, 无操控微信/Excel GUI的官方演示。office-suite存疑保留(实为python库生成文件, 非GUI操控)。已被Meta收购。"
   },
   {
     "id": "kimi",
@@ -42,16 +46,18 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["browser-web", "office-suite"]
+    "capability_domains": ["browser-web"],
+    "notes": "调研2026-07校准: 逆向确认无鼠标/截图/GUI控制工具, 仅Playwright浏览器+CLI。office是云端生成.xlsx非操控Excel GUI -> 去掉office-suite。WebBridge仅控浏览器(含网页版微信, 非微信客户端)。"
   },
   {
     "id": "codebuddy",
-    "display_name": "CodeBuddy (\u817e\u8baf\u4e91\u4ee3\u7801\u52a9\u624b)",
-    "can_operate_local_desktop": true,
+    "display_name": "CodeBuddy (腾讯云代码助手)",
+    "can_operate_local_desktop": false,
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["computer-control", "browser-web", "office-suite"]
+    "capability_domains": ["browser-web"],
+    "notes": "调研2026-07校准: CodeBuddy本体是编程助手(插件/IDE), 无GUI控制。computer-control仅CLI实验功能(macOS/默认关/定位CI运维)-> 去掉。office是WorkBuddy文件级生成非GUI操控-> 去掉。browser-web靠WorkBuddy的Agent Browser Skill保留。"
   },
   {
     "id": "openai_operator",
@@ -60,7 +66,8 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["browser-web"]
+    "capability_domains": ["browser-web"],
+    "notes": "调研2026-07: 云端虚拟机+云端浏览器, 官方明确'does not control your personal device'。2025.08并入ChatGPT Agent仍云端。仅browser-web属实, 碰本地桌面题判cannot-reach是对的。"
   },
   {
     "id": "google_mariner",
@@ -69,6 +76,7 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["browser-web"]
+    "capability_domains": ["browser-web"],
+    "notes": "调研2026-07: 云端VM里的Chrome agent, DataCamp实测'can't access or control your computer'。仅browser-web, 硬边界。"
   }
 ]

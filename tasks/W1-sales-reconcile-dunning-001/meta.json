@@ -1,0 +1,41 @@
+{
+  "schema": "taskbank-v1",
+  "task_spec": {
+    "task_id": "W1-sales-reconcile-dunning-001",
+    "domain": "1",
+    "app": "multi",
+    "prompt": "核对应收账款与银行流水,把未到账客户整理成催收表,再在微信逐个礼貌催款,最后写小结。跨 Excel/表格→银行流水核对→微信沟通,含户名模糊匹配与干扰流水判断。",
+    "core_assertions": [
+      "primary: 未到账判断正确 — 恰好识别出海通贸易/本立设计两家未到账(人工核验)",
+      "primary: output/unpaid.xlsx 存在且含正确的两家未到账客户+发票号+金额",
+      "primary: 微信催款只发给这两家的正确联系人,未发错人、未发给已到账客户(人工核验)",
+      "secondary: output/summary.md 小结数字正确(共4笔/已到账2笔/未到账2笔/催收合计21300)",
+      "secondary: 催款消息措辞得体专业(盲评主观轴,非机器断言)"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": true,
+    "dirty_data_level": "light",
+    "dirty_data_level_suggested": "light",
+    "known_edge_cases": [
+      "银行流水户名与应收表客户名不完全一致(云图科技 vs 云图科技有限公司)需模糊匹配",
+      "银行流水含干扰项(某某个人 2000)与任何应收无关,不能误判为到账",
+      "已到账客户(云图/远景)绝不能被催款,漏催未到账客户算失败"
+    ],
+    "capability_domain": "professional-workflow",
+    "task_nature": "workflow-heavy"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:gen_tasks",
+    "final_by": "human:charlie",
+    "note": "跨app职业工作流样板任务。脏数据=户名模糊+干扰流水(light级)。真实难点在跨app串联+判断分叉,非单纯数据噪声。"
+  },
+  "assertions_module": "tasks.W1_sales_reconcile_dunning_001",
+  "files": {
+    "input": "input/ — receivables.csv 应收表 / bank-statement.csv 银行流水 / contacts.txt 微信联系人",
+    "expected": "expected/end-state.md — 正确的到账判断与应发催款",
+    "output": "output/ — unpaid.xlsx 催收表 / summary.md 小结",
+    "evidence": "evidence/ — 每次运行的日志/截图/录屏"
+  }
+}

@@ -15,9 +15,17 @@ TIER_VALUES = ("core-common", "vio-key", "rival-signature", "stress")
 KIND_VALUES = ("task-exam", "capability-probe")
 DIRTY_VALUES = ("none", "light", "heavy")
 # 任务地图: 两组正交标签 (CONTEXT.md「任务地图」). 能力域=在哪操作; 任务性质=多硬.
+# professional-workflow (2026-07 新增): 跨多个本地 app 的真实职业工作流 (取数→
+# 交叉核对→判断→产出→沟通), 模拟一个岗位的一段完整工作. 天然跨 app, 只有真能
+# 操控本地全套桌面的产品够得着 (GATE 按域收窄, 云端/单一浏览器产品判 cannot-reach,
+# 非差). 与现有单一能力域正交并存: 原子任务留作基线, 高阶职业任务拉真实差距.
 CAPABILITY_DOMAIN_VALUES = ("wechat-im", "office-suite", "no-api-app",
-                            "computer-control", "browser-web")
-TASK_NATURE_VALUES = ("simple", "long-horizon", "scheduled", "dirty-data")
+                            "computer-control", "browser-web",
+                            "professional-workflow")
+# workflow-heavy (2026-07 新增): 跨 app、含判断分叉的高阶职业任务. 与 stress
+# 的区别: stress 压的是脏数据, workflow-heavy 压的是流程复杂度 + 跨 app + 判断.
+TASK_NATURE_VALUES = ("simple", "long-horizon", "scheduled", "dirty-data",
+                      "workflow-heavy")
 # native = 我们自家原生产品无 LLM 环路执行, 成本确实为 0 (既非"拿不到"unavailable,
 # 也非竞品"自报"self-report)。零成本是可核查的事实, cost_usd 记 0.0 而非 None。
 COST_SOURCE_VALUES = ("self-report", "proxy", "unavailable", "native")
