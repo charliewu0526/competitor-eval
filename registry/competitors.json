@@ -26,8 +26,8 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["computer-control", "browser-web", "professional-workflow"],
-    "notes": "调研2026-07校准: 仅 macOS 桌面版(2026.04 Computer Use)能控本地GUI; 云端版/CLI版官方明确不能(GitHub issue #16666)。charlie 2026-07-28决定纳入 professional-workflow: 桌面版Computer Use能点/开/输入任意本地app(官方'any apps on your machine'),可跑跨app职业工作流。Windows仅前台。"
+    "capability_domains": ["computer-control", "browser-web", "professional-workflow", "wechat-im", "no-api-app", "office-suite"],
+    "notes": "调研2026-07校准: 仅 macOS 桌面版(2026.04 Computer Use)能控本地GUI; 云端版/CLI版官方明确不能(GitHub issue #16666)。charlie 2026-07-28决定纳入 professional-workflow + wechat-im + no-api-app + office-suite: 桌面版Computer Use能点/开/输入任意本地app(官方'any apps on your machine'),含微信客户端/Excel等GUI软件,可做各域对比(缺Claude账号时codex顶上)。Windows仅前台。"
   },
   {
     "id": "manus",
