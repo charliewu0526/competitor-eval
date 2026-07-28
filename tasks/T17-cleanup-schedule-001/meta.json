@@ -13,7 +13,7 @@
     "expects_file": false,
     "tier": "core-common",
     "kind": "task-exam",
-    "requires_local_desktop": true,
+    "requires_local_desktop": false,
     "dirty_data_level": "none",
     "dirty_data_level_suggested": "none",
     "known_edge_cases": [],

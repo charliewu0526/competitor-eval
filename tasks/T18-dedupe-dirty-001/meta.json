@@ -13,7 +13,7 @@
     "expects_file": true,
     "tier": "stress",
     "kind": "task-exam",
-    "requires_local_desktop": true,
+    "requires_local_desktop": false,
     "dirty_data_level": "heavy",
     "dirty_data_level_suggested": "heavy",
     "known_edge_cases": [

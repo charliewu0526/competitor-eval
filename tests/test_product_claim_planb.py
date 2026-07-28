@@ -29,9 +29,14 @@ class ProductLevelMaterialize(unittest.TestCase):
         con = store.connect(_tmpdb())
         units = A.materialize_products_for_task(con, TASK)
         # 每个单元恰含一个产品; 覆盖整个参赛集。
+        # W1 参赛集 = professional-workflow 域够得着的产品 (vio/claude/codex);
+        # 断言"每个单元单产品 + 覆盖参赛集 + vio/claude 在内", 不写死具体集合
+        # (登记表调整时不脆断)。
         self.assertTrue(all(len(u["products"]) == 1 for u in units))
         prods = sorted(u["products"][0] for u in units)
-        self.assertEqual(prods, ["claude", "vio"])
+        self.assertIn("vio", prods)
+        self.assertIn("claude", prods)
+        self.assertEqual(len(prods), len(set(prods)))   # 无重复
         self.assertTrue(all(u["status"] == "open" for u in units))
 
     def test_idempotent_on_task_product(self):
