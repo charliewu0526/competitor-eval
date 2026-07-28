@@ -1,6 +1,6 @@
 import React from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
-import { Layout, Menu, Typography, Spin, Space, Tag, Dropdown, Avatar, Button } from "antd";
+import { Layout, Menu, Typography, Spin, Space, Tag, Dropdown, Avatar, Button, Result } from "antd";
 import {
   DashboardOutlined, TrophyOutlined, TableOutlined, RadarChartOutlined,
   DollarOutlined, BulbOutlined, ExperimentOutlined, SafetyCertificateOutlined,
@@ -28,28 +28,60 @@ import Methods from "./pages/Methods.jsx";
 
 const { Header, Sider, Content } = Layout;
 
+// 角色分级(与后端 pipeline/rbac.py 的 rank 对齐):数值越大权限越高。
+const ROLE_RANK = { intern: 0, reviewer: 1, owner: 2 };
+export function roleRank(role) { return ROLE_RANK[role] ?? -1; }
+
+// 导航单一真相源:每项带 minRole —— 菜单过滤 + 路由守卫共用这一份,
+// 保证「藏了菜单」和「敲 URL 也进不去」永远一致(否则藏菜单等于没藏)。
+// 分档(charlie 拍板):
+//   intern 实习生(6): 总览/任务清单/我的任务/方法沉淀/差距报告/排行榜 —— 只留他的活 + 看结果。
+//   reviewer 审核员(+7): 分维度/按题矩阵/评分详情/成本/发现看板/能力专项/抽查队列 —— 复核分析。
+//   owner PM(+1): 黄金集授权 —— 校准类危险开关独占。
 const NAV = [
-  { key: "/", icon: <DashboardOutlined />, label: "总览" },
-  { key: "/catalog", icon: <UnorderedListOutlined />, label: "任务清单" },
-  { key: "/assignments", icon: <SolutionOutlined />, label: "我的任务" },
-  { key: "/methods", icon: <DeploymentUnitOutlined />, label: "方法沉淀" },
-  { key: "/leaderboard", icon: <TrophyOutlined />, label: "排行榜" },
-  { key: "/domain-board", icon: <AppstoreOutlined />, label: "分维度榜单" },
-  { key: "/matrix", icon: <TableOutlined />, label: "按题矩阵" },
-  { key: "/score", icon: <RadarChartOutlined />, label: "评分详情" },
-  { key: "/cost", icon: <DollarOutlined />, label: "成本面板" },
-  { key: "/findings", icon: <BulbOutlined />, label: "发现看板" },
-  { key: "/gap-report", icon: <DiffOutlined />, label: "差距报告" },
-  { key: "/probes", icon: <ExperimentOutlined />, label: "能力专项" },
-  { key: "/spotcheck", icon: <SafetyCertificateOutlined />, label: "抽查队列" },
-  { key: "/authorizations", icon: <AuditOutlined />, label: "黄金集授权" },
+  { key: "/", icon: <DashboardOutlined />, label: "总览", minRole: "intern" },
+  { key: "/catalog", icon: <UnorderedListOutlined />, label: "任务清单", minRole: "intern" },
+  { key: "/assignments", icon: <SolutionOutlined />, label: "我的任务", minRole: "intern" },
+  { key: "/methods", icon: <DeploymentUnitOutlined />, label: "方法沉淀", minRole: "intern" },
+  { key: "/gap-report", icon: <DiffOutlined />, label: "差距报告", minRole: "intern" },
+  { key: "/leaderboard", icon: <TrophyOutlined />, label: "排行榜", minRole: "intern" },
+  { key: "/domain-board", icon: <AppstoreOutlined />, label: "分维度榜单", minRole: "reviewer" },
+  { key: "/matrix", icon: <TableOutlined />, label: "按题矩阵", minRole: "reviewer" },
+  { key: "/score", icon: <RadarChartOutlined />, label: "评分详情", minRole: "reviewer" },
+  { key: "/cost", icon: <DollarOutlined />, label: "成本面板", minRole: "reviewer" },
+  { key: "/findings", icon: <BulbOutlined />, label: "发现看板", minRole: "reviewer" },
+  { key: "/probes", icon: <ExperimentOutlined />, label: "能力专项", minRole: "reviewer" },
+  { key: "/spotcheck", icon: <SafetyCertificateOutlined />, label: "抽查队列", minRole: "reviewer" },
+  { key: "/authorizations", icon: <AuditOutlined />, label: "黄金集授权", minRole: "owner" },
 ];
+
+// 路由 path -> 该页要求的 minRole(路由守卫用)。与 NAV 同源。
+const ROUTE_MIN_ROLE = Object.fromEntries(NAV.map((n) => [n.key, n.minRole]));
 
 const ROLE_LABEL = {
   intern: { text: "实习生", color: "blue" },
   reviewer: { text: "审核员", color: "geekblue" },
   owner: { text: "PM(管理员)", color: "purple" },
 };
+
+// 路由守卫:实习生直接敲 /authorizations 这类 URL 也进不去(否则藏了菜单等于没藏)。
+// 与 NAV 同源(ROUTE_MIN_ROLE),无权则显示人话拦截页并给回总览的入口。
+function Guard({ path, children }) {
+  const { user } = useAuth();
+  const need = ROUTE_MIN_ROLE[path] || "intern";
+  if (roleRank(user?.role) < roleRank(need)) {
+    const needLabel = ROLE_LABEL[need]?.text || need;
+    return (
+      <Result
+        status="403"
+        title="这个页面不对你开放"
+        subTitle={`该页面面向「${needLabel}」及以上角色。你当前是「${ROLE_LABEL[user?.role]?.text || user?.role}」,做好自己的活就行,不必看这里。`}
+        extra={<Button type="primary" href="/">回到总览</Button>}
+      />
+    );
+  }
+  return children;
+}
 
 export default function App() {
   const nav = useNavigate();
@@ -65,6 +97,10 @@ export default function App() {
   if (!user) return <Login />;
 
   const role = ROLE_LABEL[user.role] || { text: user.role, color: "default" };
+  const myRank = roleRank(user.role);
+  // 按角色过滤菜单:只显示 minRole <= 我的角色的页(实习生彻底看不到治理/分析页)。
+  const visibleNav = NAV.filter((n) => myRank >= roleRank(n.minRole))
+    .map(({ key, icon, label }) => ({ key, icon, label }));
 
   return (
     <GlossaryProvider>
@@ -78,7 +114,7 @@ export default function App() {
           <Menu
             theme="dark" mode="inline"
             selectedKeys={[loc.pathname]}
-            items={NAV}
+            items={visibleNav}
             onClick={({ key }) => nav(key)}
           />
         </Sider>
@@ -102,20 +138,20 @@ export default function App() {
           </Header>
           <Content style={{ margin: 24 }}>
             <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/catalog" element={<TaskCatalog />} />
-              <Route path="/assignments" element={<Assignments />} />
-              <Route path="/methods" element={<Methods />} />
-              <Route path="/leaderboard" element={<Leaderboard />} />
-              <Route path="/domain-board" element={<DomainBoard />} />
-              <Route path="/matrix" element={<Matrix />} />
-              <Route path="/score" element={<ScoreDetail />} />
-              <Route path="/cost" element={<Cost />} />
-              <Route path="/findings" element={<Findings />} />
-              <Route path="/gap-report" element={<GapReport />} />
-              <Route path="/probes" element={<Probes />} />
-              <Route path="/spotcheck" element={<SpotCheck />} />
-              <Route path="/authorizations" element={<Authorizations />} />
+              <Route path="/" element={<Guard path="/"><Dashboard /></Guard>} />
+              <Route path="/catalog" element={<Guard path="/catalog"><TaskCatalog /></Guard>} />
+              <Route path="/assignments" element={<Guard path="/assignments"><Assignments /></Guard>} />
+              <Route path="/methods" element={<Guard path="/methods"><Methods /></Guard>} />
+              <Route path="/leaderboard" element={<Guard path="/leaderboard"><Leaderboard /></Guard>} />
+              <Route path="/domain-board" element={<Guard path="/domain-board"><DomainBoard /></Guard>} />
+              <Route path="/matrix" element={<Guard path="/matrix"><Matrix /></Guard>} />
+              <Route path="/score" element={<Guard path="/score"><ScoreDetail /></Guard>} />
+              <Route path="/cost" element={<Guard path="/cost"><Cost /></Guard>} />
+              <Route path="/findings" element={<Guard path="/findings"><Findings /></Guard>} />
+              <Route path="/gap-report" element={<Guard path="/gap-report"><GapReport /></Guard>} />
+              <Route path="/probes" element={<Guard path="/probes"><Probes /></Guard>} />
+              <Route path="/spotcheck" element={<Guard path="/spotcheck"><SpotCheck /></Guard>} />
+              <Route path="/authorizations" element={<Guard path="/authorizations"><Authorizations /></Guard>} />
             </Routes>
           </Content>
         </Layout>
