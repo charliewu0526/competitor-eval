@@ -6,6 +6,7 @@ import {
   DollarOutlined, BulbOutlined, ExperimentOutlined, SafetyCertificateOutlined,
   AuditOutlined, UnorderedListOutlined, AppstoreOutlined, DiffOutlined,
   UserOutlined, LogoutOutlined, SolutionOutlined, DeploymentUnitOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import { GlossaryProvider } from "./glossary.jsx";
 import { useAuth } from "./auth.jsx";
@@ -25,6 +26,7 @@ import SpotCheck from "./pages/SpotCheck.jsx";
 import Authorizations from "./pages/Authorizations.jsx";
 import Assignments from "./pages/Assignments.jsx";
 import Methods from "./pages/Methods.jsx";
+import Users from "./pages/Users.jsx";
 
 const { Header, Sider, Content } = Layout;
 
@@ -53,6 +55,7 @@ const NAV = [
   { key: "/probes", icon: <ExperimentOutlined />, label: "能力专项", minRole: "reviewer" },
   { key: "/spotcheck", icon: <SafetyCertificateOutlined />, label: "抽查队列", minRole: "reviewer" },
   { key: "/authorizations", icon: <AuditOutlined />, label: "黄金集授权", minRole: "owner" },
+  { key: "/users", icon: <TeamOutlined />, label: "用户管理", minRole: "owner" },
 ];
 
 // 路由 path -> 该页要求的 minRole(路由守卫用)。与 NAV 同源。
@@ -152,6 +155,7 @@ export default function App() {
               <Route path="/probes" element={<Guard path="/probes"><Probes /></Guard>} />
               <Route path="/spotcheck" element={<Guard path="/spotcheck"><SpotCheck /></Guard>} />
               <Route path="/authorizations" element={<Guard path="/authorizations"><Authorizations /></Guard>} />
+              <Route path="/users" element={<Guard path="/users"><Users /></Guard>} />
             </Routes>
           </Content>
         </Layout>

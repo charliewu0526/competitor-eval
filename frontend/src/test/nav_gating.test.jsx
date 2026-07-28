@@ -39,12 +39,13 @@ vi.mock("../pages/GapReport.jsx", () => ({ default: () => <div data-testid="page
 vi.mock("../pages/Probes.jsx", () => ({ default: () => <div data-testid="page-Probes">Probes</div> }));
 vi.mock("../pages/SpotCheck.jsx", () => ({ default: () => <div data-testid="page-SpotCheck">SpotCheck</div> }));
 vi.mock("../pages/Authorizations.jsx", () => ({ default: () => <div data-testid="page-Authorizations">Authorizations</div> }));
+vi.mock("../pages/Users.jsx", () => ({ default: () => <div data-testid="page-Users">Users</div> }));
 
 import App from "../App.jsx";
 
 const INTERN_ONLY = ["总览", "任务清单", "我的任务", "方法沉淀", "差距报告", "排行榜"];
 const REVIEWER_EXTRA = ["分维度榜单", "按题矩阵", "评分详情", "成本面板", "发现看板", "能力专项", "抽查队列"];
-const OWNER_EXTRA = ["黄金集授权"];
+const OWNER_EXTRA = ["黄金集授权", "用户管理"];
 
 function renderAt(path) {
   return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
@@ -72,10 +73,10 @@ describe("分级导航:侧边栏按角色过滤", () => {
     for (const label of OWNER_EXTRA) expect(screen.queryByText(label)).toBeNull();
   });
 
-  it("owner 看到全部 14 个菜单项", async () => {
+  it("owner 看到全部 15 个菜单项", async () => {
     state.user = { id: "owner1", name: "PM", role: "owner" };
     renderAt("/");
-    await waitFor(() => expect(screen.getAllByText("黄金集授权").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("用户管理").length).toBeGreaterThan(0));
     for (const label of [...INTERN_ONLY, ...REVIEWER_EXTRA, ...OWNER_EXTRA]) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }

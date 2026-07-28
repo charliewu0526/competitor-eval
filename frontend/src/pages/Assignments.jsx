@@ -169,6 +169,10 @@ function AssignmentCard({ a, me, busy, onClaim, onAbandon, onSubmitFinal, onChan
       {a.status === "claimed" && mine && (
         <>
           <Divider style={{ margin: "12px 0" }} />
+          <p style={{ color: "#8c8c8c", marginTop: 0, marginBottom: 8 }}>
+            你已领到这道题。下一步:给组里<b>每个产品各跑一遍并交一份产物</b>(截图/导出/对话记录 + 执行日志包),
+            {canFinal ? "都交齐了,点右上「收口交付」提交整组。" : "交齐后右上「收口交付」才会亮。"}
+          </p>
           <Space wrap>
             <span style={{ color: "#8c8c8c" }}>逐个产品提交产物:</span>
             {(a.products || []).map((p) => (

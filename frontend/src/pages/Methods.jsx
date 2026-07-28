@@ -92,6 +92,7 @@ function MethodCard({ m, canGate, onChanged }) {
     <Card style={{ marginBottom: 12 }}
       title={<Space wrap>{statusTag(m.status)}<b>{m.product}</b>
         <span style={{ color: "#8c8c8c", fontWeight: 400 }}>@ {m.task_id}</span>
+        {m.author && <span style={{ color: "#8c8c8c", fontWeight: 400 }}>作者 {m.author}</span>}
         {m.gated_by && <span style={{ color: "#8c8c8c", fontWeight: 400 }}>把关人 {m.gated_by}</span>}
       </Space>}
       extra={

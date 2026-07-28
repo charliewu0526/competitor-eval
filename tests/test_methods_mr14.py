@@ -50,6 +50,15 @@ class DraftCreation(unittest.TestCase):
         # 落库可复读
         self.assertEqual(store.get_method(con, m["id"])["status"], "draft")
 
+    def test_author_recorded(self):
+        # #6 修复: 方法初稿记录作者 id, 好追溯是谁提炼的。
+        con = _tmpdb()
+        m = METH.draft_method(con, author=_u("intern", uid="u_lin"), task_id="T1",
+                              product="manus", draft="竞品用 X, Violoop 落地 Y")
+        self.assertEqual(m["author"], "u_lin")
+        # 落库可复读作者
+        self.assertEqual(store.get_method(con, m["id"])["author"], "u_lin")
+
     def test_reviewer_and_owner_can_also_draft(self):
         con = _tmpdb()
         for role in ("reviewer", "owner"):

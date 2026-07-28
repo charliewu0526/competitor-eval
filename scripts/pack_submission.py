@@ -187,6 +187,21 @@ def main(argv=None):
             return 2
         # pack() 内部默认从 manifest 派生 log_facts;这里直接把导出的日志接线进去。
         raw = json.loads(lp.read_text())
+        # #7 修复: intake 解析器只认扁平 input_tokens/output_tokens/model_calls。
+        # 很多导出日志把 token 塞在嵌套 cost{} 对象里(或用 cost_input_tokens 别名),
+        # 直接透传会让服务端读到 None -> 成本静默丢失。这里统一抬平到扁平字段。
+        raw = _flatten_log_cost(raw)
+        # 显式 --input-tokens 等参数与 --log 里的值冲突时: 显式参数优先并告警
+        # (--log 是"已导出日志", 但实习生手动核对后的显式值更权威)。
+        for flat, cli in (("input_tokens", args.input_tokens),
+                          ("output_tokens", args.output_tokens),
+                          ("model_calls", args.model_calls)):
+            cval = _tok(cli)
+            if cval is not None and cval != PACK.UNAVAILABLE:
+                if raw.get(flat) not in (None, cval):
+                    print(f"[warn] --{flat.replace('_','-')}={cval} 覆盖 --log 里的 "
+                          f"{flat}={raw.get(flat)}", file=sys.stderr)
+                raw[flat] = int(cval)
         _orig = PACK.pack
 
         def _pack_with_log(**kw):
@@ -194,6 +209,31 @@ def main(argv=None):
             return _orig(**kw)
         PACK.pack = _pack_with_log
     return args.func(args)
+
+
+def _flatten_log_cost(raw: dict) -> dict:
+    """把日志包里嵌套/别名的 token 字段抬平成 intake 认识的扁平字段。
+
+    intake 的 LogBundleParser 只读扁平 input_tokens / output_tokens / model_calls。
+    容忍两种常见变体, 抬平到扁平键(已存在的扁平键不覆盖):
+      * 嵌套 cost 对象: {"cost": {"input_tokens": 155, ...}}
+      * cost_ 前缀别名: {"cost_input_tokens": 155, ...}
+    """
+    if not isinstance(raw, dict):
+        return raw
+    out = dict(raw)
+    nested = out.get("cost") if isinstance(out.get("cost"), dict) else {}
+    for f in ("input_tokens", "output_tokens", "model_calls"):
+        if out.get(f) is None:
+            if nested.get(f) is not None:
+                out[f] = nested[f]
+            elif out.get(f"cost_{f}") is not None:
+                out[f] = out[f"cost_{f}"]
+    # model / cost_source 同样容忍嵌套。
+    for f in ("model", "cost_source"):
+        if out.get(f) is None and nested.get(f) is not None:
+            out[f] = nested[f]
+    return out
 
 
 if __name__ == "__main__":

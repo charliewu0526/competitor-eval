@@ -66,6 +66,8 @@ def draft_method(con, *, author: dict | None, task_id: str, product: str,
     mid = store.upsert_method(con, {
         "task_id": task_id, "product": product,
         "draft": str(draft).strip(), "status": DRAFT,
+        # 署名: 记录写初稿的人, 好让方法沉淀页显示「作者 XXX」并可追溯 (#6 修复)。
+        "author": (author or {}).get("id"),
     })
     return store.get_method(con, mid)
 

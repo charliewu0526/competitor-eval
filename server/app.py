@@ -30,6 +30,10 @@ from pipeline import review_queue as RQ
 from pipeline import methods as METH
 from pipeline import registry as REG
 from pipeline import gap_report as GAP
+from pipeline import blind_panel as BP
+from pipeline import suite as SUITE
+from pipeline import intake as INTAKE
+from pipeline.intake import Submission as _IntakeSubmission
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 # CORS 白名单: 默认只放本地前端 (Vite 5273 / 常见 3000)。生产用 env 明列前端域名,
@@ -408,10 +412,19 @@ def _assignment_view(a: dict) -> dict:
 
 @app.get("/api/assignments")
 def list_open_assignments(user=rbac("claim_assignment")):
-    """列出可领取 (open) 的 Assignment。任意已登录用户可看 (intern 起)。"""
+    """列出可领取 (open) 的 Assignment + 当前用户已领取/已交付的活。
+
+    修复: 只返回 open 会让 intern 领取后任务立即从「我的任务」消失,
+    再也进不了提交环节。这里并上 assignments_for_user(当前用户持有的
+    claimed/submitted),前端 AssignmentCard 按 mine+status 渲染提交/收口。
+    """
     con = _con()
-    return [_assignment_view(store.get_assignment(con, a["id"]))
-            for a in store.open_assignments(con)]
+    seen = {}
+    for a in store.open_assignments(con):
+        seen[a["id"]] = a
+    for a in store.assignments_for_user(con, user["id"]):
+        seen[a["id"]] = a
+    return [_assignment_view(store.get_assignment(con, aid)) for aid in seen]
 
 
 class MaterializeIn(BaseModel):
@@ -462,9 +475,48 @@ def abandon_assignment(assignment_id: str, user=rbac("claim_assignment")):
     return _assignment_view(a)
 
 
+def _score_assignment_into_board(con, assignment_id: str) -> dict:
+    """收口后把该 Assignment 的整组 Submission 翻成 RunRecord + 独立盲评分并落库。
+
+    这是 #43 AC4 承诺的「落库即流向 intake」的真正接线: 收口成功 -> 每个产品的
+    Submission 经 intake.translate 成 RunRecord, 送盲评面板独立打分, upsert 进
+    runs + scores, 榜单据此更新。纯派生, 不改状态机。
+
+    失败(面板超时/密钥失效/任务无断言模块)只回报 status, 绝不阻塞收口 ——
+    实习生已交的活不能因为评分环节抖动而回滚。
+    """
+    a = store.get_assignment(con, assignment_id)
+    if a is None:
+        return {"status": "skipped", "reason": "assignment 不存在"}
+    task_id = a.get("task_id")
+    # 1. 定位 task_meta (suite.LoadedTask: 带 task_spec + assertions)。
+    loaded = {t.task_spec.task_id: t for t in SUITE.discover_tasks()}
+    lt = loaded.get(task_id)
+    if lt is None:
+        return {"status": "skipped", "reason": f"任务 {task_id} 不在任务库"}
+    # 2. 把该 Assignment 每个产品的 Submission 读回, adapt 成 intake.Submission。
+    subs = []
+    for row in store.submissions_for(con, assignment_id):
+        row = dict(row)
+        row.setdefault("task_id", task_id)
+        subs.append(_IntakeSubmission.from_store_row(row))
+    if not subs:
+        return {"status": "skipped", "reason": "无 submission 可评分"}
+    # 3. 独立盲评 -> 落 runs + scores (真实评审面板, REVIEW_PANEL 决定成员)。
+    reg = REG.default_registry()
+    blind = BP.score_submissions(subs, lt, reg)
+    BP.persist_blind_scores(con, blind)
+    return {"status": "scored", "products": [b.product for b in blind],
+            "count": len(blind)}
+
+
 @app.post("/api/assignments/{assignment_id}/submit")
 def submit_assignment(assignment_id: str, user=rbac("submit")):
-    """把已领取的 Assignment 标记 submitted (claimed -> submitted)。仅持有者可交。"""
+    """把已领取的 Assignment 标记 submitted (claimed -> submitted)。仅持有者可交。
+
+    收口成功后自动触发整组评分入榜 (#43 AC4 接线): 评分失败不阻塞收口,
+    只在返回体的 score_status 里如实透传, 供前端提示「已交付, 评分稍后重试」。
+    """
     con = _con()
     try:
         a = ASSIGN.submit(con, assignment_id, by=user["id"])
@@ -473,7 +525,16 @@ def submit_assignment(assignment_id: str, user=rbac("submit")):
     except ASSIGN.AssignmentError as e:
         code = 404 if "不存在" in str(e) else 403
         raise HTTPException(code, str(e))
-    return _assignment_view(a)
+    # 收口即评分入榜 —— 失败兜底, 绝不回滚已交付的活。
+    try:
+        score_status = _score_assignment_into_board(con, assignment_id)
+    except Exception as e:  # noqa: BLE001 (评分抖动不能让收口失败)
+        import logging
+        logging.getLogger("competitor-eval").exception("收口后自动评分失败")
+        score_status = {"status": "error", "reason": str(e)}
+    view = _assignment_view(a)
+    view["score_status"] = score_status
+    return view
 
 
 @app.post("/api/assignments/reclaim-stale")
@@ -701,6 +762,7 @@ def _method_view(m: dict) -> dict:
     return {
         "id": m["id"], "task_id": m["task_id"], "product": m["product"],
         "draft": m["draft"], "status": m["status"],
+        "author": m.get("author"),
         "gated_by": m.get("gated_by"),
     }
 

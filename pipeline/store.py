@@ -166,6 +166,7 @@ CREATE TABLE IF NOT EXISTS methods (
     product              TEXT NOT NULL,       -- 被提炼方法的竞品
     draft                TEXT NOT NULL,       -- 方法初稿(差距证据包上提炼)
     status               TEXT NOT NULL DEFAULT 'draft',  -- draft | approved | exported (方法复核闸)
+    author               TEXT,                -- 写初稿的 intern users.id (署名, 追溯是谁提炼的)
     gated_by             TEXT,                -- 把关的 reviewer/PM users.id
     created_ts           REAL
 );
@@ -763,10 +764,11 @@ def upsert_method(con, m: dict) -> int:
     # RETURNING id 一套写法跨双库拿自增主键: SQLite(>=3.35) 与 Postgres 都支持,
     # 避免 SQLite 专属的 rowid/lastrowid 在 PG 上炸 (MR-1b #51 真穿通暴露的方言遗漏).
     row = con.execute("""INSERT INTO methods (task_id, product, draft, status,
-                         gated_by, created_ts) VALUES (?,?,?,?,?,?)
+                         author, gated_by, created_ts) VALUES (?,?,?,?,?,?,?)
                          RETURNING id""",
                       (m["task_id"], m["product"], m["draft"],
-                       m.get("status", "draft"), m.get("gated_by"),
+                       m.get("status", "draft"), m.get("author"),
+                       m.get("gated_by"),
                        m.get("created_ts", time.time()))).fetchone()
     con.commit()
     return row["id"]

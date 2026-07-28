@@ -25,6 +25,7 @@
     "final_by": "human:charlie",
     "note": "Clean office-suite pilot: a single unambiguous sum into one cell. Dirty-data (merged cells, hidden rows, text-as-number) belongs to a later stress-tier task."
   },
+  "assertions_module": "tasks.T2_excel_sum",
   "files": {
     "input": "input/ — sales.xlsx starting workbook (may be faked)",
     "expected": "expected/end-state.md — C14 holds SUM(C2:C13), all else unchanged",

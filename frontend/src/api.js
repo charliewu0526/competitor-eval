@@ -97,6 +97,16 @@ export const postSubmission = (id, formData) =>
     headers: { "Content-Type": "multipart/form-data" },
   }).then((r) => r.data);
 
+// --- MR-4 用户管理:列用户 / 提升角色 / 签发邀请令牌 (owner 专属) --------
+export const getUsers = () => api.get("/users").then((r) => r.data);
+export const promoteUser = (userId, role) =>
+  api.post(`/users/${encodeURIComponent(userId)}/role`, { role }).then((r) => r.data);
+export const issueInvite = (note, ttlSeconds) =>
+  api.post("/invites", {
+    ...(note ? { note } : {}),
+    ...(ttlSeconds != null ? { ttl_seconds: ttlSeconds } : {}),
+  }).then((r) => r.data);
+
 // --- MR-14 方法沉淀:初稿 → 把关 → 导出 -------------------------------
 export const getMethods = (status) =>
   api.get("/methods", { params: status ? { status } : {} }).then((r) => r.data);
