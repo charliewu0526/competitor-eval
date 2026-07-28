@@ -33,8 +33,9 @@ function MaterializeButton({ onDone }) {
   const go = async () => {
     setBusy(true);
     try {
-      await materializeAssignment(taskId.trim());
-      message.success("已铸造为可领取任务");
+      const r = await materializeAssignment(taskId.trim());
+      const n = r?.count ?? 0;
+      message.success(`已铸成 ${n} 个产品级可领取单元(每个参赛产品一个)`);
       setOpen(false); setTaskId(""); onDone && onDone();
     } catch (e) { message.error(e.userMessage || String(e)); }
     finally { setBusy(false); }
@@ -47,8 +48,9 @@ function MaterializeButton({ onDone }) {
       <Modal title="把任务清单里的题铸成可领取任务" open={open} onCancel={() => setOpen(false)}
         onOk={go} okButtonProps={{ loading: busy, disabled: !taskId.trim() }} okText="铸造">
         <p style={{ color: "#8c8c8c" }}>
-          输入任务清单里的 task_id(如 T1-wechat-send-001)。系统会带上该能力域的
-          同域参赛竞品集,铸成一道整组对打任务。同题重复铸造会复用原单。
+          输入任务清单里的 task_id(如 T1-wechat-send-001)。系统会按该题的参赛集
+          <b>把每个参赛产品各铸成一个独立可领取单元</b>(题×产品),不同人可用各自
+          账号分别领取同题的不同产品。同题重复铸造会复用原单。
         </p>
         <Input placeholder="task_id" value={taskId}
           onChange={(e) => setTaskId(e.target.value)} onPressEnter={go} />

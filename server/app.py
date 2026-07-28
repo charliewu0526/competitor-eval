@@ -440,15 +440,20 @@ class MaterializeIn(BaseModel):
 
 @app.post("/api/assignments/materialize")
 def materialize_assignment(body: MaterializeIn, user=rbac("manage_task_catalog")):
-    """把清单里的一道题铸成可领取的 Assignment (含同域参赛产品集, ADR-0015)。
+    """把清单里的一道题铸成【产品级】可领取单元 (方案B: 领取粒度=题×产品)。
 
-    维护任务清单属 owner 独占 (story 5, manage_task_catalog)。幂等: 同题复用原单。
+    维护任务清单属 owner 独占 (story 5, manage_task_catalog)。幂等: 已物化的
+    (task,product) 复用原单。返回该题全部参赛产品的领取单元列表。
+
+    方案B改造: 旧版铸一条"整题单"(product=None 锁死全部产品), 会导致别人领了
+    整道题就没人能领 —— 这里改为按参赛集拆成 N 个单产品单元, 不同人可各领各的。
     """
     try:
-        a = ASSIGN.materialize_for_task(_con(), body.task_id)
+        units = ASSIGN.materialize_products_for_task(_con(), body.task_id)
     except ASSIGN.AssignmentError as e:
         raise HTTPException(400, str(e))
-    return _assignment_view(a)
+    views = [_assignment_view(a) for a in units]
+    return {"task_id": body.task_id, "units": views, "count": len(views)}
 
 
 @app.post("/api/assignments/{assignment_id}/claim")
