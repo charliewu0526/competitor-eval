@@ -387,6 +387,13 @@ def upsert_finding(con: sqlite3.Connection, f) -> int:
     """Persist a Finding. Re-classify UPDATES machine fields but PRESERVES the
     PM-filled product_judgment/final_category (machine never overwrites human)."""
     d = f.as_dict() if hasattr(f, "as_dict") else dict(f)
+    # 走查 BUG-5: PG 上 findings.id 序列未随历史数据(SQLite→PG 迁移/直插)推进时,
+    # 自增会抢到已存在的 id -> duplicate key "findings_pkey" -> 整个收口重评事务崩,
+    # 谎报竞品的 honesty-alert 永远进不了发现看板。INSERT 前把序列重同步到 max(id),
+    # 保证新行 id 单调。SQLite 无此问题(AUTOINCREMENT 自维护), 故仅 PG 执行。
+    if _db.is_postgres(con):
+        con.execute("SELECT setval(pg_get_serial_sequence('findings','id'), "
+                    "GREATEST((SELECT COALESCE(MAX(id),0) FROM findings),1))")
     con.execute("""
         INSERT INTO findings (task_id, rule, suspected_category, subject,
             phenomenon, evidence_json, product_judgment, final_category,
@@ -496,6 +503,28 @@ def enqueue_spot_check(con: sqlite3.Connection, *, task_id: str, product: str,
                          WHERE task_id=? AND product=? AND run_idx=?""",
                       (task_id, product, run_idx)).fetchone()
     return row["id"]
+
+
+def purge_stale_spot_checks(con: sqlite3.Connection,
+                            valid_keys: set) -> int:
+    """删掉「当前评分集里已不存在、且尚无人工裁决」的 pending 抽查项。
+
+    走查 BUG-4: build_queue 只 enqueue 不清理, 旧运行(旧竞品集)入队的抽查项
+    (如已下架竞品 open_interpreter) 会永久赖在队列里, 让 reviewer 看到本轮根本
+    没参赛的「幽灵」复核项。与 findings 的 delete_findings_for_task 同源思路。
+    valid_keys = 当前所有已评分 run 的 {(task_id, product, run_idx)}。
+    只清 status='pending' 的陈旧项 —— 已裁决(ok/anomaly)的保留供审计, 不抹历史。
+    """
+    removed = 0
+    for r in con.execute("SELECT id, task_id, product, run_idx FROM "
+                         "spot_check_queue WHERE status='pending'"):
+        key = (r["task_id"], r["product"], r["run_idx"])
+        if key not in valid_keys:
+            con.execute("DELETE FROM spot_check_queue WHERE id=?", (r["id"],))
+            removed += 1
+    if removed:
+        con.commit()
+    return removed
 
 
 def record_spot_check(con: sqlite3.Connection, queue_id: int, *, status: str,

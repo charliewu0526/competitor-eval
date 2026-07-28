@@ -15,6 +15,8 @@ from typing import Literal
 from fastapi import (FastAPI, HTTPException, Header, Depends, UploadFile, File,
                      Form, BackgroundTasks)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from pipeline import store, leaderboard as LB, findings as F, sampling as SP
@@ -552,6 +554,7 @@ def _score_assignment_into_board(con, assignment_id: str) -> dict:
     失败(面板超时/密钥失效/任务无断言模块)只回报 status, 绝不阻塞收口 ——
     实习生已交的活不能因为评分环节抖动而回滚。
     """
+    import logging
     a = store.get_assignment(con, assignment_id)
     if a is None:
         return {"status": "skipped", "reason": "assignment 不存在"}
@@ -596,7 +599,29 @@ def _score_assignment_into_board(con, assignment_id: str) -> dict:
                                 "ref": (summary or "")[:200]}]
     finds = F.classify(task_id, scores, evidence=evidence)
     for fnd in finds:
-        store.upsert_finding(con, fnd)
+        # 逐条兜底(优化点2): 单条 finding 落库失败不拖垮整批评分事务 ——
+        # 否则一条坏数据(如历史脏行/序列冲突)会让整个收口重评崩, 谎报竞品的
+        # honesty-alert 全军覆没(BUG-5 已治本, 这里再加一层防御, 单条坏不影响其余)。
+        try:
+            store.upsert_finding(con, fnd)
+        except Exception:  # noqa: BLE001
+            logging.getLogger("competitor-eval").exception(
+                "upsert_finding 失败 task=%s subject=%s", task_id, fnd.subject)
+            try:
+                con.rollback()   # 清掉 PG 的 aborted-transaction 状态, 才能继续下一条
+            except Exception:  # noqa: BLE001
+                pass
+
+    # 5. 收口评分落库后**自动重建分层抽查队列**(优化点1): 否则实习生收口后, 高风险/
+    #    矛盾疑点不会自动进队列, reviewer 要手动点「重建」才看得到, 极易漏看谎报。
+    #    自动 rebuild 让「收口 -> 疑点入队 -> reviewer 复核」全自动衔接。失败只记日志,
+    #    不影响已落库的评分。
+    try:
+        SP.build_queue(con)
+    except Exception:  # noqa: BLE001
+        logging.getLogger("competitor-eval").exception(
+            "自动重建抽查队列失败 task=%s", task_id)
+
     return {"status": "scored", "products": [b.product for b in blind],
             "count": len(blind), "findings": len(finds)}
 
@@ -949,3 +974,24 @@ def export_method(method_id: int, user=Depends(current_user)):
     except METH.NotApproved as e:
         raise HTTPException(409, str(e))
     return {"method": _method_view(out["method"]), "document": out["document"]}
+
+
+# --- 静态前端 (build -> serve 接缝) --------------------------------------
+# 所有 API 都在 /api/* 前缀下(上方 44 个路由)。这里把 vite build 产物挂在根路径,
+# 让 uvicorn 单端口(8600)同时出 API + 站点 —— cloudflared 只需暴露这一个口。
+# 放在所有 /api 路由之后注册, 不会遮挡接口。dist 不存在时静默跳过(纯 dev 模式)。
+import pathlib as _pathlib
+
+_DIST = _pathlib.Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if (_DIST / "index.html").exists():
+    # /assets/* 等构建资源走真实文件。
+    app.mount("/assets", StaticFiles(directory=str(_DIST / "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    def _spa(full_path: str):
+        # SPA fallback: 未命中 /api 与 /assets 的路径一律回 index.html,
+        # 交给前端 React Router 处理, 否则刷新子路由会 404。
+        candidate = _DIST / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(str(candidate))
+        return FileResponse(str(_DIST / "index.html"))

@@ -125,6 +125,11 @@ def build_queue(con, *, rate: float = NORMAL_RATE) -> dict:
     """
     scores = store.all_scores(con)
     findings = store.all_findings(con)
+    # 走查 BUG-4: 先清「当前评分集里已不存在、且尚无人工裁决」的陈旧 pending 抽查项
+    # (旧竞品集残留的幽灵复核项), 再按本轮 scores 重建 —— 队列只反映当前评测。
+    valid_keys = {(sc["task_id"], sc["product"], sc.get("run_idx"))
+                  for sc in scores}
+    purged = store.purge_stale_spot_checks(con, valid_keys)
     by_task: dict = {}
     for f in findings:
         by_task.setdefault((f["task_id"],), []).append(f)
