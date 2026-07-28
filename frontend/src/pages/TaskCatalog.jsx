@@ -146,11 +146,14 @@ export default function TaskCatalog() {
     getCatalog().then(setGroups).catch((e) => setErr(e.userMessage || String(e)));
   }, []);
 
-  const onClaim = async (taskId) => {
-    setClaiming(taskId);
+  // 方案B: 必须把 product 一起传给后端, 否则 product=undefined 会回退整题领取,
+  // 造出锁死整道题的整题单(实习生反馈"没领同一产品也领不了"的真凶)。
+  // claiming 用 `${taskId}::${product}` 与 TaskPanel 的 loading 判定对齐。
+  const onClaim = async (taskId, product) => {
+    setClaiming(`${taskId}::${product}`);
     try {
-      await claimFromCatalog(taskId);
-      message.success("已领取,去『我的任务』给每个产品交产物");
+      await claimFromCatalog(taskId, product);
+      message.success(`已领取 ${product},去『我的任务』提交这个产品的产物`);
       nav("/assignments");
     } catch (e) {
       message.warning(e.userMessage || String(e));
