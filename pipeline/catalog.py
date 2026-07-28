@@ -86,6 +86,17 @@ def _task_card(loaded, registry) -> dict:
         readme = (pathlib.Path(loaded.task_dir) / "README.md").read_text()
     except Exception:
         readme = ""
+    # 实扫 input/ 目录, 列出系统已提供的起始素材文件(相对 input/ 的路径)。
+    # 不依赖 meta 的 files 段(老 T 任务普遍缺该段 -> 详情页显示"(无)"), 直接读盘,
+    # 让实习生看得到"素材确实在系统里", 并配合下载端点真能取到。
+    input_files = []
+    try:
+        idir = pathlib.Path(loaded.task_dir) / "input"
+        for p in sorted(idir.rglob("*")):
+            if p.is_file() and p.name != "README.md" and not p.name.startswith("."):
+                input_files.append(p.relative_to(idir).as_posix())
+    except Exception:
+        input_files = []
     return {
         "task_id": s.task_id,
         "app": s.app,
@@ -102,6 +113,7 @@ def _task_card(loaded, registry) -> dict:
         "readme": readme,                   # 详细说明 (人读)
         "competitors": competitors,         # 全部产品 + 各自 GATE
         "participating": [c["id"] for c in participating],  # 同域实际参赛集
+        "input_files": input_files,         # 系统已提供的起始素材(供详情页列出+下载)
     }
 
 

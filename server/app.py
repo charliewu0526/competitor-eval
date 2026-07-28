@@ -456,6 +456,33 @@ def materialize_assignment(body: MaterializeIn, user=rbac("manage_task_catalog")
     return {"task_id": body.task_id, "units": views, "count": len(views)}
 
 
+@app.get("/api/catalog/{task_id}/input/{file_path:path}")
+def download_task_input(task_id: str, file_path: str, user=rbac("claim_assignment")):
+    """下载一道题的起始素材文件 (方案B 素材统一由系统提供 —— 远程实习生靠这个真拿到文件)。
+
+    实习生反馈'找不到起始素材': 素材躺在本机 tasks/<id>/input/, 前端此前无下载入口。
+    这里按 task_id + 相对路径回传文件。做严格路径校验防目录穿越 (只允许该题 input/ 内、
+    非 README/隐藏文件)。需登录 (claim_assignment 权限), 不裸奔。
+    """
+    import pathlib as _pl
+    # 定位任务目录 (走 suite 发现, 不信任外部拼路径)。
+    tdir = None
+    for t in SUITE.discover_tasks():
+        if t.task_spec.task_id == task_id:
+            tdir = _pl.Path(t.task_dir)
+            break
+    if tdir is None:
+        raise HTTPException(404, f"任务不存在: {task_id}")
+    idir = (tdir / "input").resolve()
+    target = (idir / file_path).resolve()
+    # 防目录穿越: 目标必须落在 input/ 内。
+    if not str(target).startswith(str(idir) + "/") or not target.is_file():
+        raise HTTPException(404, "素材文件不存在或不可访问")
+    if target.name == "README.md" or target.name.startswith("."):
+        raise HTTPException(404, "素材文件不存在或不可访问")
+    return FileResponse(str(target), filename=target.name)
+
+
 @app.post("/api/assignments/{assignment_id}/claim")
 def claim_assignment(assignment_id: str, user=rbac("claim_assignment")):
     """intern 领取一道 Assignment (整组对打一人一次性, ADR-0015)。

@@ -4,8 +4,8 @@ import {
   Card, Collapse, Segmented, Tag, Typography, Spin, Empty, Space, Alert,
   Button, message,
 } from "antd";
-import { ThunderboltOutlined } from "@ant-design/icons";
-import { getCatalog, claimFromCatalog } from "../api.js";
+import { ThunderboltOutlined, DownloadOutlined } from "@ant-design/icons";
+import { getCatalog, claimFromCatalog, downloadTaskInput } from "../api.js";
 import { useAuth } from "../auth.jsx";
 
 const { Paragraph, Text } = Typography;
@@ -67,12 +67,35 @@ function TaskPanel({ task, canClaim, onClaim, claiming }) {
         {task.expects_file ? " · 产出文件" : ""}
       </Paragraph>
 
-      {task.setup && (
+      {(task.setup || task.input_files?.length > 0) && (
         <Card size="small" title="起始状态 / 前置准备 (由 PM 统一提供, 请勿自建素材)"
           style={{ marginBottom: 12, background: "#fffbe6", borderColor: "#ffe58f" }}>
-          <Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>
-            {task.setup}
-          </Paragraph>
+          {task.setup && (
+            <Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: task.input_files?.length ? 10 : 0 }}>
+              {task.setup}
+            </Paragraph>
+          )}
+          {task.input_files?.length > 0 && (
+            <div>
+              <Text strong>系统已提供的起始素材(点击下载):</Text>
+              <div style={{ marginTop: 6 }}>
+                <Space wrap>
+                  {task.input_files.map((f) => (
+                    <Button key={f} size="small" icon={<DownloadOutlined />}
+                      onClick={async () => {
+                        try { await downloadTaskInput(task.task_id, f); }
+                        catch (e) { message.error(e.userMessage || "下载失败"); }
+                      }}>
+                      {f}
+                    </Button>
+                  ))}
+                </Space>
+              </div>
+              <Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 6 }}>
+                这些就是这道题要处理的素材,直接下载到本机再让 AI 产品操作。请勿自建或更换文件。
+              </Text>
+            </div>
+          )}
         </Card>
       )}
 

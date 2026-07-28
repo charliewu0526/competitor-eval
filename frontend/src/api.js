@@ -88,6 +88,20 @@ export const materializeAssignment = (taskId) =>
 export const claimFromCatalog = (taskId, product) =>
   api.post(`/catalog/${encodeURIComponent(taskId)}/claim`,
     { task_id: taskId, product: product || null }).then((r) => r.data);
+
+// 下载一道题的起始素材文件(远程实习生靠这个真拿到 input/ 里的文件)。
+// 带 Bearer token 拉 blob, 触发浏览器下载。
+export async function downloadTaskInput(taskId, relPath) {
+  const resp = await api.get(
+    `/catalog/${encodeURIComponent(taskId)}/input/${relPath.split("/").map(encodeURIComponent).join("/")}`,
+    { responseType: "blob" });
+  const url = URL.createObjectURL(resp.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = relPath.split("/").pop();
+  document.body.appendChild(a); a.click();
+  a.remove(); URL.revokeObjectURL(url);
+}
 export const claimAssignment = (id) =>
   api.post(`/assignments/${encodeURIComponent(id)}/claim`).then((r) => r.data);
 export const abandonAssignment = (id) =>
