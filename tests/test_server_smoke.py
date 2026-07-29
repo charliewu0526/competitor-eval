@@ -48,6 +48,9 @@ REQUIRED_ROUTES = {
     ("POST", "/api/reports"),
     ("GET", "/api/reports/mine"),
     ("GET", "/api/reports/console"),
+    # MR-D (#59) 上线闸门: 批准(冒烟金丝雀)/ 拒绝
+    ("POST", "/api/reports/{report_id}/approve"),
+    ("POST", "/api/reports/{report_id}/reject"),
 }
 
 

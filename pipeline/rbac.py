@@ -47,6 +47,8 @@ PERMISSIONS: dict[str, str] = {
     # --- MR-B (#56) 用户反馈 (PRD #54, ADR-0020) --------------------------
     "submit_report":         "intern",    # 提交反馈: 仅登录用户可提, 可追责 (story 1/6)
     "view_report_console":   "owner",     # 反馈台: owner 专属页面, 不塞进现有看板 (story 21)
+    # --- MR-D (#59) 上线闸门 (PRD #54, ADR-0023) --------------------------
+    "approve_patch":         "owner",     # 批准/拒绝候选补丁 + 走金丝雀上线 (story 14-19)
 }
 
 

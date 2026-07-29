@@ -38,6 +38,7 @@ from pipeline import suite as SUITE
 from pipeline import intake as INTAKE
 from pipeline.intake import Submission as _IntakeSubmission
 from pipeline import reports as REPORTS
+from pipeline import canary as CANARY
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 # CORS 白名单: 默认只放本地前端 (Vite 5273 / 常见 3000)。生产用 env 明列前端域名,
@@ -1145,6 +1146,64 @@ def report_console(user=rbac("view_report_console")):
         row["screenshot_count"] = len(ART.list_report_uploads(rid, "screenshot"))
         row["has_log"] = bool(ART.list_report_uploads(rid, "log"))
     return rows
+
+
+# === MR-D (#59) 上线闸门: 批准(冒烟金丝雀+回滚+安静窗口)/ 拒绝 ==============
+# 薄转发: 逻辑在 pipeline/canary.py(run_canary 编排 + 状态机回写)。owner 独占
+# (approve_patch)。批准走真金丝雀: 临时端口起新进程 -> 健康+冒烟全过才切主进程,
+# 失败自动 git checkout 回 good commit + 重启旧版; 有 in-flight 评测则延迟(除非
+# force)。sever 端点只做鉴权 + 调编排层 + 翻错误码。
+
+class ApproveIn(BaseModel):
+    force: bool = False   # 有活跃领题/评测时仍强制上线(跳过安静窗口等待)。
+
+
+class RejectIn(BaseModel):
+    message: str | None = None   # 给 AI/自己留一句为何拒绝。
+    retry: bool = False          # True: 拒绝后再排队让 AI 按留言重试一次。
+
+
+@app.post("/api/reports/{report_id}/approve")
+def approve_report(report_id: str, body: ApproveIn | None = None,
+                   user=rbac("approve_patch")):
+    """owner 批准一个 patch-ready 补丁 -> 冒烟金丝雀上线(story 17/18/19)。
+
+    - 有 in-flight 领题/评测且未 force -> 200 {outcome:"deferred"}(排安静窗口,
+      不硬重启踹掉正在跑的评测), 不报错。
+    - 冒烟全过 -> 切主进程, report -> resolved, 通知提交者。
+    - 健康/冒烟失败 -> 自动回滚旧版, report -> needs-human(附失败原因)。
+    非 patch-ready -> 409。真金丝雀在 owner 机器上跑(生产装配), 决策逻辑见 canary。
+    """
+    force = bool(body.force) if body else False
+    try:
+        out = CANARY.approve(_con(), report_id, allow_when_busy=force)
+    except REPORTS.ReportError as e:
+        # 非 patch-ready / 不存在 -> 冲突/未找到(canary 守卫 & reports.get)。
+        raise HTTPException(409, str(e))
+    # report 行按 owner 视图返回(反馈台可见内部字段)。
+    r = out.get("report")
+    return {"outcome": out.get("outcome"),
+            "reason": out.get("reason") or out.get("detail"),
+            "inflight": out.get("inflight"),
+            "good_commit": out.get("good_commit"),
+            "report": REPORTS.console_view(r) if r else None}
+
+
+@app.post("/api/reports/{report_id}/reject")
+def reject_report(report_id: str, body: RejectIn | None = None,
+                  user=rbac("approve_patch")):
+    """owner 拒绝一个 patch-ready 补丁 -> needs-human(附留言; story 16)。
+
+    retry=True 时拒绝后再 enqueue 回 queued, 让修复 Agent 按留言重试一次。
+    非 patch-ready -> 409。
+    """
+    msg = body.message if body else None
+    retry = bool(body.retry) if body else False
+    try:
+        r = CANARY.reject(_con(), report_id, message=msg, retry=retry)
+    except REPORTS.ReportError as e:
+        raise HTTPException(409, str(e))
+    return REPORTS.console_view(r)
 
 
 # --- 静态前端 (build -> serve 接缝) --------------------------------------

@@ -42,6 +42,7 @@ _MIN_ROLE = {
     "submit": "intern",
     "submit_report": "intern",
     "view_report_console": "owner",
+    "approve_patch": "owner",
 }
 _RANK = {"intern": 0, "reviewer": 1, "owner": 2}
 

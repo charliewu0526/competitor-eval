@@ -153,8 +153,17 @@ export const submitReport = (text, files) => {
 };
 // 提交者查看自己每条反馈的状态(返回不含 diff/诊断)。
 export const getMyReports = () => api.get("/reports/mine").then((r) => r.data);
-// owner 反馈台:全部反馈 + 状态(只读骨架,diff 面板/批准按钮由后续切片加)。
+// owner 反馈台:全部反馈 + 状态 + 内部字段(diff/测试/诊断,owner 可见)。
 export const getReportConsole = () =>
   api.get("/reports/console").then((r) => r.data);
+
+// --- MR-D (#59) 上线闸门:批准(冒烟金丝雀)/ 拒绝 -------------------------
+// 批准走真金丝雀:临时端口起新进程 → 健康+冒烟全过才切主进程,失败自动回滚。
+// force=true:有 in-flight 领题/评测时仍强制上线(否则返回 outcome:"deferred")。
+export const approveReport = (id, force = false) =>
+  api.post(`/reports/${id}/approve`, { force }).then((r) => r.data);
+// 拒绝 → needs-human 附留言;retry=true 让 AI 按留言重试一次。
+export const rejectReport = (id, message, retry = false) =>
+  api.post(`/reports/${id}/reject`, { message, retry }).then((r) => r.data);
 
 export default api;
