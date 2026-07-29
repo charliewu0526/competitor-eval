@@ -44,6 +44,9 @@ PERMISSIONS: dict[str, str] = {
     # --- 基础层: 任意已登录用户 (intern 起) -------------------------------
     "claim_assignment":      "intern",    # 领取任务 (story 8)
     "submit":                "intern",    # 提交交付物 (story 14)
+    # --- MR-B (#56) 用户反馈 (PRD #54, ADR-0020) --------------------------
+    "submit_report":         "intern",    # 提交反馈: 仅登录用户可提, 可追责 (story 1/6)
+    "view_report_console":   "owner",     # 反馈台: owner 专属页面, 不塞进现有看板 (story 21)
 }
 
 

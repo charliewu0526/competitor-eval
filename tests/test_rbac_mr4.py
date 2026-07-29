@@ -40,6 +40,8 @@ _MIN_ROLE = {
     "gate_method": "reviewer",
     "claim_assignment": "intern",
     "submit": "intern",
+    "submit_report": "intern",
+    "view_report_console": "owner",
 }
 _RANK = {"intern": 0, "reviewer": 1, "owner": 2}
 

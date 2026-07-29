@@ -220,3 +220,56 @@ def resolve(con, report_id: str, *, good_commit: str | None = None,
 def close(con, report_id: str, **kw) -> dict:
     """-> closed: 终态收口, 通知提交者。合法来源: resolved / needs-human / ai-failed。"""
     return transition(con, report_id, "closed", **kw)
+
+
+# === MR-B (#56): 读出视图裁剪 (RBAC 在存储行之上按角色裁字段) =================
+# 立身之本 (PRD story 5 / ADR-0020): 提交者只见状态, 看不到 diff / 诊断 / 分支 /
+# 测试结果 —— 免内部代码细节外泄。owner 反馈台看全量。裁剪在读出后做 (存储层照存
+# 全字段, 谁能看由这一层决定), 与 logview raw 仅 owner/AI 可见同构。
+
+# 提交者可见的字段白名单: 只有「我这条反馈现在到哪一步了」需要的。
+_SUBMITTER_FIELDS = ("id", "submitter", "status", "text",
+                     "created_ts", "updated_ts")
+
+# 状态 -> 给提交者看的人话进展 (PRD story 3: 处理中/已修复/需人工, 不暴露内部态名)。
+_SUBMITTER_STATUS_LABEL = {
+    "submitted":   "已收到",
+    "queued":      "处理中",
+    "ai-working":  "处理中",
+    "patch-ready": "处理中",
+    "needs-human": "需人工处理",
+    "ai-failed":   "需人工处理",
+    "resolved":    "已修复",
+    "closed":      "已关闭",
+}
+
+
+def submitter_view(row: dict) -> dict:
+    """把一条 report 裁成提交者可见视图: 仅状态类字段 + 人话进展, 无 diff/诊断。
+
+    ADR-0020 story 5: 提交者不应看到补丁 diff 或内部诊断。此函数是那条边界的
+    唯一出口 —— 只放行 _SUBMITTER_FIELDS, 内部字段 (branch_name/diagnosis/diff_ref/
+    test_result/good_commit) 一律不带出。
+    """
+    out = {k: row.get(k) for k in _SUBMITTER_FIELDS}
+    out["status_label"] = _SUBMITTER_STATUS_LABEL.get(row.get("status"), "处理中")
+    return out
+
+
+def console_view(row: dict) -> dict:
+    """反馈台(owner)视图: 原样带全字段。
+
+    MR-B 只做只读骨架 —— diff 面板 / 批准按钮由 MR-C、MR-D 各自加, 此处不预造。
+    高亮标记(needs-human / ai-failed 优先处理, story 20)由前端据 status 派生。
+    """
+    return dict(row)
+
+
+def list_for_submitter(con, submitter: str) -> list[dict]:
+    """提交者查自己的全部反馈(裁成 submitter_view, 无 diff/诊断)。"""
+    return [submitter_view(r) for r in store.reports_for_submitter(con, submitter)]
+
+
+def list_for_console(con) -> list[dict]:
+    """反馈台全量(owner 专属, console_view)。两条流不混 —— 只碰 user_report。"""
+    return [console_view(r) for r in store.all_user_reports(con)]

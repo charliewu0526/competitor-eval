@@ -37,6 +37,7 @@ from pipeline import blind_panel as BP
 from pipeline import suite as SUITE
 from pipeline import intake as INTAKE
 from pipeline.intake import Submission as _IntakeSubmission
+from pipeline import reports as REPORTS
 
 app = FastAPI(title="Competitor Eval API", version="1.0")
 # CORS 白名单: 默认只放本地前端 (Vite 5273 / 常见 3000)。生产用 env 明列前端域名,
@@ -1046,6 +1047,104 @@ def export_method(method_id: int, user=Depends(current_user)):
     except METH.NotApproved as e:
         raise HTTPException(409, str(e))
     return {"method": _method_view(out["method"]), "document": out["document"]}
+
+
+# === MR-B (#56) 用户反馈: 提交(文字+截图+自动附日志)+ 反馈台只读 ==========
+# 一条「人能报、owner 能看」的可演示闭环, AI 尚未接入(C/D 加)。薄转发: 逻辑在
+# pipeline/reports.py(状态机 + 视图裁剪)与 artifact_store(截图/日志通道复用),
+# 端点只做鉴权 + 落盘 + 调策略层 + 翻错误码, 沿用 46 条路由的薄转发风格。
+
+def _snapshot_backend_log(report_id: str, *, max_bytes: int = 64_000) -> str | None:
+    """提交反馈时自动附带后端日志尾部快照(story 2: 用户不必手动收集)。
+
+    读 board/backend.log(run_frontend.sh 的落点)尾部 max_bytes 存成该 report 的
+    log 附件。仅 owner/AI 可见(ADR-0013, 由反馈台 RBAC 把关, 不进提交者视图)。
+    日志不存在 / 读失败 -> 返回 None(不阻断提交: 附日志是增益不是前置条件)。
+    """
+    import pathlib as _pl
+    log_path = ART.upload_root().parent / "board" / "backend.log"
+    try:
+        if not log_path.is_file():
+            return None
+        data = log_path.read_bytes()
+        tail = data[-max_bytes:] if len(data) > max_bytes else data
+        return ART.save_report_upload(report_id=report_id, kind="log",
+                                      filename="backend.log", data=tail)
+    except Exception:
+        return None
+
+
+@app.post("/api/reports")
+async def submit_report(
+    text: str = Form(default=""),
+    screenshots: list[UploadFile] | None = File(default=None),
+    user=Depends(current_user),
+):
+    """登录用户提交一条反馈(文字 + 一或多张截图), 系统自动附带后端日志。
+
+    仅登录用户可提(submit_report=intern 起, 未登录 403)。提交后 report 自动
+    submitted -> queued 入 cron 队列(C 由 cron 扫 queued 触发修复 Agent)。
+    截图走 artifact_store 复用通道, 库里不存二进制; 返回提交者视图(无 diff/诊断)。
+    """
+    try:
+        RBAC.require(user, "submit_report")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+
+    con = _con()
+    # 1. 建 report(submitter 必填, 可追责)。
+    try:
+        r = REPORTS.create(con, submitter=user["id"], text=text or None)
+    except REPORTS.ReportError as e:
+        raise HTTPException(400, str(e))
+    rid = r["id"]
+
+    # 2. 截图落盘(复用 artifact_store, 可多张; 空文件跳过)。
+    saved = 0
+    for up in (screenshots or []):
+        data = await up.read()
+        if ART.has_bytes(data):
+            ART.save_report_upload(report_id=rid, kind="screenshot",
+                                   filename=up.filename, data=data)
+            saved += 1
+
+    # 3. 自动附带后端日志尾部(增益, 失败不阻断)。
+    _snapshot_backend_log(rid)
+
+    # 4. submitted -> queued(入 cron 队列, 松耦合等 C 来扫)。
+    r = REPORTS.enqueue(con, rid)
+
+    view = REPORTS.submitter_view(r)
+    view["screenshots"] = saved
+    return view
+
+
+@app.get("/api/reports/mine")
+def list_my_reports(user=Depends(current_user)):
+    """提交者查看自己每条反馈的状态(处理中/已修复/需人工)。
+
+    未登录 -> 401。返回中**不含** diff/诊断/分支/测试结果(submitter_view 裁剪,
+    story 5: 内部细节不外泄)。
+    """
+    if not user:
+        raise HTTPException(401, "未登录或会话已失效")
+    return REPORTS.list_for_submitter(_con(), user["id"])
+
+
+@app.get("/api/reports/console")
+def report_console(user=rbac("view_report_console")):
+    """owner 反馈台: 列全部反馈 + 状态(只读骨架)。owner 独占(story 21)。
+
+    MR-B 只做只读列表; diff 面板 / 批准按钮由 MR-C、MR-D 加。needs-human /
+    ai-failed 的高亮(story 20)由前端据 status 派生。附每条截图/日志计数供预览。
+    """
+    con = _con()
+    rows = REPORTS.list_for_console(con)
+    for row in rows:
+        rid = row.get("id")
+        row["screenshot_count"] = len(ART.list_report_uploads(rid, "screenshot"))
+        row["has_log"] = bool(ART.list_report_uploads(rid, "log"))
+    return rows
 
 
 # --- 静态前端 (build -> serve 接缝) --------------------------------------

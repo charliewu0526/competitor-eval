@@ -141,4 +141,20 @@ export const previewMethod = (id) =>
 export const exportMethod = (id) =>
   api.post(`/methods/${id}/export`).then((r) => r.data);
 
+// --- MR-B (#56) 用户反馈:提交(文字+截图,自动附日志)/ 我的状态 / owner 反馈台 ---
+// 提交走 multipart:文字 + 0..N 张截图。系统自动附带后端日志(用户无需手动收集)。
+export const submitReport = (text, files) => {
+  const fd = new FormData();
+  fd.append("text", text || "");
+  (files || []).forEach((f) => fd.append("screenshots", f));
+  return api.post("/reports", fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  }).then((r) => r.data);
+};
+// 提交者查看自己每条反馈的状态(返回不含 diff/诊断)。
+export const getMyReports = () => api.get("/reports/mine").then((r) => r.data);
+// owner 反馈台:全部反馈 + 状态(只读骨架,diff 面板/批准按钮由后续切片加)。
+export const getReportConsole = () =>
+  api.get("/reports/console").then((r) => r.data);
+
 export default api;
