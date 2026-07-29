@@ -68,8 +68,12 @@ export const getCatalogTask = (taskId) =>
   api.get(`/catalog/${encodeURIComponent(taskId)}`).then((r) => r.data);
 export const getGapReportTasks = (baseline = "vio") =>
   api.get("/gap-report", { params: { baseline } }).then((r) => r.data);
-export const getGapReport = (taskId, baseline = "vio") =>
-  api.get(`/gap-report/${encodeURIComponent(taskId)}`, { params: { baseline } })
+export const getGapReport = (taskId, baseline = "vio", attribution = false) =>
+  api.get(`/gap-report/${encodeURIComponent(taskId)}`,
+    // 归因调 Claude 最强模型读交付物, 单次可达 ~20s, 远超默认 15s 超时;
+    // 带归因时放宽到 120s, 否则前端会误报「后端没连上」。
+    { params: { baseline, attribution },
+      timeout: attribution ? 120000 : 15000 })
     .then((r) => r.data);
 
 export const postJudgment = (id, body) =>

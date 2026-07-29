@@ -246,15 +246,21 @@ def list_gap_report_tasks(baseline: str = "vio"):
 
 
 @app.get("/api/gap-report/{task_id}")
-def get_gap_report(task_id: str, baseline: str = "vio"):
-    """MR-11 (#47): 一道对比任务的完整差距报告 (派生视图, 引擎不改)."""
+def get_gap_report(task_id: str, baseline: str = "vio", attribution: bool = False):
+    """MR-11 (#47): 一道对比任务的完整差距报告 (派生视图, 引擎不改).
+
+    attribution=true 时附「差距归因层」(gap_attribution): 读双方交付物原文,调
+    Claude 最强模型分析竞品比 vio 好在哪一步/多做了什么(疑似定性 + 强制原文引用,
+    PM 拍板)。较慢(需读产物 + 调模型),故默认关闭,前端按需触发。
+    """
     con = _con()
     scores = store.all_scores(con)
     finds = store.all_findings(con)
     if not any(s.get("task_id") == task_id for s in scores):
         raise HTTPException(404, "no scores for this task")
     rep = GAP.build_report(task_id, scores, finds,
-                           registry=REG.default_registry(), baseline=baseline)
+                           registry=REG.default_registry(), baseline=baseline,
+                           with_attribution=attribution)
     return rep.as_dict()
 
 

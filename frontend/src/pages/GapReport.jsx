@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Typography, Card, Tag, Spin, Alert, Empty, Select, Space, Table,
-  Tooltip, Divider, List,
+  Tooltip, Divider, List, Button, Collapse,
 } from "antd";
 import {
   RiseOutlined, FallOutlined, GithubOutlined, WarningOutlined,
+  BulbOutlined, FileSearchOutlined,
 } from "@ant-design/icons";
 import { Link } from "react-router-dom";
 import { getGapReportTasks, getGapReport } from "../api";
@@ -128,6 +129,98 @@ function Mechanisms({ mechanisms }) {
   );
 }
 
+// --- 归因分析块(差距报告重点:竞品好在哪一步、为什么、是否新能力)---------
+const CAT_META = {
+  "feature-gap": { color: "red", text: "疑似功能差距 · 该补齐" },
+  "experience-borrow": { color: "gold", text: "疑似体验进步 · 可借鉴" },
+  "execution-detail": { color: "blue", text: "执行细节更到位" },
+};
+
+function AttributionBlock({ attribution, onRun, running }) {
+  // 未触发:给一个按钮,按需调 Claude 最强模型(较慢)。
+  if (!attribution) {
+    return (
+      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+        <span style={{ color: "#8c8c8c" }}>
+          归因分析会读双方交付物原文,用 Claude 最强模型找出竞品比我们好在哪一步、
+          具体多做了什么、是否是值得补齐/借鉴的新能力 —— 每条结论都附交付物原文引用。
+          较慢(需读产物+调模型),按需触发。
+        </span>
+        <Button type="primary" icon={<BulbOutlined />} loading={running}
+          onClick={onRun}>
+          分析这道题的差距归因
+        </Button>
+      </Space>
+    );
+  }
+  const a = attribution;
+  if (a.dry_run) {
+    return <Alert type="warning" showIcon
+      message="本题无法归因"
+      description={a.note || "交付物缺失或归因引擎不可用(如实标,不编造)。"} />;
+  }
+  if (!a.points || a.points.length === 0) {
+    return <Empty description={a.note
+      || "归因未发现竞品比我们明显更好之处(不硬凑)。"} />;
+  }
+  return (
+    <Space direction="vertical" size={12} style={{ width: "100%" }}>
+      <span style={{ fontSize: 12, color: "#8c8c8c" }}>
+        引擎 {a.engine} · 机器只给疑似判断 + 原文引用,最终定性由 PM 拍板。
+      </span>
+      {a.points.map((p, i) => {
+        const meta = CAT_META[p.suspected_category] || CAT_META["execution-detail"];
+        return (
+          <Card key={i} size="small" type="inner"
+            title={
+              <Space wrap>
+                <b>{p.competitor}</b>
+                <Tag color={meta.color}>{meta.text}</Tag>
+                {p.confidence === "low_confidence" && (
+                  <Tooltip title="没有从交付物原文里逐字命中的引用支撑,可信度低,仅供参考。">
+                    <Tag color="orange" icon={<WarningOutlined />}>证据不足</Tag>
+                  </Tooltip>
+                )}
+              </Space>
+            }
+          >
+            <Space direction="vertical" size={6} style={{ width: "100%" }}>
+              <div style={{ fontWeight: 600, color: "#262626" }}>{p.headline}</div>
+              <div style={{ color: "#595959" }}>{p.detail}</div>
+              {p.citations && p.citations.length > 0 && (
+                <Collapse ghost size="small"
+                  items={[{
+                    key: "cite",
+                    label: <span style={{ fontSize: 12 }}>
+                      <FileSearchOutlined /> 交付物原文引用 ({p.citations.length})
+                    </span>,
+                    children: (
+                      <List size="small" dataSource={p.citations}
+                        renderItem={(c, ci) => (
+                          <List.Item key={ci}>
+                            <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                              <span style={{ fontSize: 12, color: "#8c8c8c" }}>
+                                [{c.product}] {c.source_file}
+                              </span>
+                              <pre style={{
+                                margin: 0, whiteSpace: "pre-wrap", fontSize: 12,
+                                background: "#fafafa", padding: 8, borderRadius: 4,
+                                borderLeft: "3px solid #d9d9d9",
+                              }}>{c.quote}</pre>
+                            </Space>
+                          </List.Item>
+                        )} />
+                    ),
+                  }]} />
+              )}
+            </Space>
+          </Card>
+        );
+      })}
+    </Space>
+  );
+}
+
 // --- 主页面 ---------------------------------------------------------------
 export default function GapReport() {
   const [taskList, setTaskList] = useState(null);
@@ -135,6 +228,20 @@ export default function GapReport() {
   const [report, setReport] = useState(null);
   const [err, setErr] = useState(null);
   const [loadingRep, setLoadingRep] = useState(false);
+  const [attribution, setAttribution] = useState(null);
+  const [runningAttr, setRunningAttr] = useState(false);
+
+  // 按需触发归因(较慢,单独调带 attribution=true 的接口),结果并入当前报告。
+  function runAttribution() {
+    if (!taskId) return;
+    setRunningAttr(true);
+    getGapReport(taskId, "vio", true)
+      .then((d) => setAttribution(d.attribution || { dry_run: true,
+        note: "归因引擎未返回结果。" }))
+      .catch((e) => setAttribution({ dry_run: true,
+        note: e.userMessage || String(e) }))
+      .finally(() => setRunningAttr(false));
+  }
 
   useEffect(() => {
     getGapReportTasks()
@@ -148,6 +255,7 @@ export default function GapReport() {
   useEffect(() => {
     if (!taskId) return;
     setLoadingRep(true);
+    setAttribution(null);   // 换题清空上一题的归因结果
     getGapReport(taskId)
       .then(setReport)
       .catch((e) => setErr(e.userMessage || String(e)))
@@ -228,6 +336,14 @@ export default function GapReport() {
                     )}
                   />
                 )}
+              </Card>
+
+              <Card
+                title={<span>差距归因 · 竞品好在哪、为什么 <InfoTip title="读双方交付物原文,用 Claude 最强模型分析竞品比我们好在哪一步、多做了什么、是否新能力。每条结论附原文引用,PM 拍板定性。" /></span>}
+                style={{ marginBottom: 16 }}
+              >
+                <AttributionBlock attribution={attribution}
+                  onRun={runAttribution} running={runningAttr} />
               </Card>
 
               <Card title={<span>源码机理 · 开源竞品 <InfoTip title="开源竞品从源码分析出的实现机理(带 repo);闭源拿不到源码,如实标 unavailable,绝不编造。" /></span>}>

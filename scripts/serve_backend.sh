@@ -12,6 +12,18 @@ unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy 2>/dev/n
 
 export CE_BACK_PORT="8600"
 export CE_PGDATA="$ROOT/board/pgdata"
+
+# 归因层(gap_attribution)调 Claude 最强模型需要 CLAUDE_API_KEY。launchd 环境不含
+# violoop secrets, 故从本地 env 文件注入(board/backend.env, 600 权限, 已 gitignore)。
+if [[ -f "$ROOT/board/backend.env" ]]; then
+  set -a; source "$ROOT/board/backend.env"; set +a
+fi
+# Anthropic 是西方端点, 必须走代理(review_client._needs_proxy 只对西方端点用它);
+# localhost 回环由上面的 NO_PROXY 覆盖, 不受影响。仅在 env 提供了代理时恢复。
+if [[ -n "${GAP_ATTRIB_HTTPS_PROXY:-}" ]]; then
+  export HTTPS_PROXY="$GAP_ATTRIB_HTTPS_PROXY"
+  export https_proxy="$GAP_ATTRIB_HTTPS_PROXY"
+fi
 export PATH="$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # 必须用 violoop venv 的 python(装了 pgserver/pg8000 等依赖);

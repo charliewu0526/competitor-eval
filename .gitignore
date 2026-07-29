@@ -33,3 +33,4 @@ outputs/agenda/mr_b_pr_body.md
 runs/walkthrough/
 
 outputs/agenda/health_step3.py
+board/backend.env

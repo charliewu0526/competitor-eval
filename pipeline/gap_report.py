@@ -80,6 +80,8 @@ class GapReport:
     score_diffs: list[ScoreDiff]
     findings: list[dict]          # 机器发现(现象),PM-fillable 字段原样带出
     mechanisms: list[CodeMechanism]
+    attribution: dict | None = None  # 归因层(gap_attribution.TaskAttribution),可选;
+    #                                  None=未做归因(纯算术视图向后兼容)
 
     def as_dict(self) -> dict:
         return {
@@ -88,6 +90,7 @@ class GapReport:
             "score_diffs": [d.as_dict() for d in self.score_diffs],
             "findings": self.findings,
             "mechanisms": [m.as_dict() for m in self.mechanisms],
+            "attribution": self.attribution,
         }
 
 
@@ -175,7 +178,8 @@ def build_score_diffs(task_scores: list[dict], baseline: str = BASELINE, *,
 def build_report(task_id: str, task_scores: list[dict], task_findings: list[dict],
                  registry=None, baseline: str = BASELINE, *,
                  now: float | None = None,
-                 window_days: float = DEFAULT_FRESHNESS_DAYS) -> GapReport:
+                 window_days: float = DEFAULT_FRESHNESS_DAYS,
+                 with_attribution: bool = False) -> GapReport:
     """组装一道对比任务的差距报告(纯派生,无副作用).
 
     task_scores   : 本题各产品的 score dict(store.all_scores 过滤 task_id,或内存)。
@@ -213,19 +217,56 @@ def build_report(task_id: str, task_scores: list[dict], task_findings: list[dict
             refs=list(ana.get("refs") or []) if (is_oss and ana) else [],
             analyst=(ana.get("analyst") if (is_oss and ana) else None)))
 
+    attribution = None
+    if with_attribution:
+        attribution = _build_attribution(task_id, score_diffs, baseline)
+
     return GapReport(task_id=task_id, baseline=baseline,
                      score_diffs=score_diffs, findings=finds,
-                     mechanisms=mechanisms)
+                     mechanisms=mechanisms, attribution=attribution)
+
+
+def _build_attribution(task_id: str, score_diffs: list[ScoreDiff],
+                       baseline: str) -> dict | None:
+    """挑出该归因的竞品并调归因引擎。归因引擎(Claude 最强模型)是可选依赖:
+    未装/失败则整块 None(纯算术视图照常返回),绝不让报告主路径挂掉。
+
+    选取口径:竞品分数 >= 基线(领先或持平)才归因 —— 我们只关心「竞品好在哪」,
+    落后的竞品不进归因(它们的现象已由 findings/big_lag 覆盖)。
+    """
+    try:
+        from pipeline import gap_attribution as GA
+    except Exception:
+        return None
+    base = next((d for d in score_diffs if d.is_baseline), None)
+    base_val = base.sample_score if base else None
+    comps = [d.product for d in score_diffs
+             if (not d.is_baseline and d.sample_score is not None
+                 and base_val is not None and d.sample_score >= base_val)]
+    if not comps:
+        return {"task_id": task_id, "baseline": baseline, "dry_run": False,
+                "engine": None, "points": [],
+                "note": "本题无竞品达到或超过基线,无需归因"}
+    try:
+        ta = GA.attribute_task(task_id, comps, GA.load_expected(task_id), baseline)
+        return ta.as_dict()
+    except Exception as ex:
+        return {"task_id": task_id, "baseline": baseline, "dry_run": True,
+                "engine": None, "points": [],
+                "note": f"归因层不可用(如实标): {str(ex)[:160]}"}
 
 
 def from_store(con, task_id: str, registry=None, baseline: str = BASELINE, *,
                now: float | None = None,
-               window_days: float = DEFAULT_FRESHNESS_DAYS) -> GapReport:
+               window_days: float = DEFAULT_FRESHNESS_DAYS,
+               with_attribution: bool = False) -> GapReport:
     """便捷:直接从 SQLite store 组装一道题的差距报告(读 scores + findings).
 
-    window_days: stale 新鲜度窗口, 与分维度榜单同口径(默认 90 天自动派生)。"""
+    window_days: stale 新鲜度窗口, 与分维度榜单同口径(默认 90 天自动派生)。
+    with_attribution: True 则附归因层(调 Claude 最强模型读交付物,较慢)。"""
     from pipeline import store as STORE
     scores = [s for s in STORE.all_scores(con) if s.get("task_id") == task_id]
     finds = [f for f in STORE.all_findings(con) if f.get("task_id") == task_id]
     return build_report(task_id, scores, finds, registry=registry, baseline=baseline,
-                        now=now, window_days=window_days)
+                        now=now, window_days=window_days,
+                        with_attribution=with_attribution)
