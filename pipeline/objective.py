@@ -76,6 +76,47 @@ def manual_check(desc: str, ctx_key: str, primary: bool = True) -> Assertion:
                      kind=HUMAN, ctx_key=ctx_key)
 
 
+def artifact_filenames_equal(expected: set[str], desc: str, *,
+                             primary: bool = True,
+                             names_key: str = "artifact_filenames") -> Assertion:
+    """机器可验「产物里的文件名集合 == 标准答案集合」(#T15 判定自动化)。
+
+    输入 ctx[names_key] = 服务端从提交产物(zip/文件夹)提取出的**文件名集合**
+    (basename,去目录前缀),权威来源、人碰不到。expected = 从任务 expected/ 结构化
+    读出的标准答案(不硬编码)。集合完全相等才通过 —— 少一个、多一个、名字错一个
+    都 fail。这样文件重命名这类「产物即答案」的任务无需人工核对即可自动判。
+
+    立身之本: 判的是末态产物文件名这个客观事实, 不看竞品/实习生自述。缺 names_key
+    (没提取到产物文件名) -> 判 False(未验证 != 通过, 不伪装成功)。
+    """
+    want = {str(x) for x in expected}
+
+    def _c(ctx: dict) -> bool:
+        got = ctx.get(names_key)
+        if got is None:
+            return False
+        return {str(x) for x in got} == want
+    return Assertion(desc, primary, _c, kind=MACHINE, ctx_key=names_key)
+
+
+def artifact_filenames_superset(expected: set[str], desc: str, *,
+                                primary: bool = False,
+                                names_key: str = "artifact_filenames") -> Assertion:
+    """机器可验「产物里包含全部标准答案文件名」(允许有额外文件, 如非图片文件保留)。
+
+    用于 secondary 断言: 只要标准答案的文件名都在产物里即通过, 不因产物多出无关
+    文件(如未动的非图片文件被一起打包)而误判失败。
+    """
+    want = {str(x) for x in expected}
+
+    def _c(ctx: dict) -> bool:
+        got = ctx.get(names_key)
+        if got is None:
+            return False
+        return want <= {str(x) for x in got}
+    return Assertion(desc, primary, _c, kind=MACHINE, ctx_key=names_key)
+
+
 def machine_keys(assertions: list[Assertion]) -> set[str]:
     """The ctx keys owned by MACHINE assertions — must be fed from authoritative
     sources, never from an intern's manual_assertions (intake enforces this)."""

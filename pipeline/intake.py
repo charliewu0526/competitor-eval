@@ -154,6 +154,40 @@ class LogBundleParser:
         return _coerce_facts(raw)
 
 
+def _artifact_filenames(artifact_path: str | None) -> set[str] | None:
+    """从提交产物提取「文件名集合」(basename, 去目录前缀), 供机器断言比对。
+
+    产物可能是: (a) .zip 压缩包 -> 读条目名; (b) 目录 -> 递归取文件名;
+    (c) 单个文件 -> 该文件名本身。取不到(路径空/不存在/读失败) -> None
+    (调用方据此不设 ctx 键, 让断言判 False —— 未验证 != 通过)。
+
+    只取叶子文件名(basename), 忽略目录条目 —— 竞品把结果打包时目录结构各异
+    (有的 input/photos/xxx, 有的直接 xxx), 判定只关心「产出了哪些文件名」。
+    """
+    if not artifact_path:
+        return None
+    p = pathlib.Path(artifact_path).expanduser()
+    if not p.exists():
+        return None
+    try:
+        if p.is_file() and p.suffix.lower() == ".zip":
+            import zipfile
+            with zipfile.ZipFile(p) as zf:
+                names = set()
+                for n in zf.namelist():
+                    if n.endswith("/"):
+                        continue  # 目录条目
+                    names.add(pathlib.PurePosixPath(n).name)
+                return names
+        if p.is_dir():
+            return {f.name for f in p.rglob("*") if f.is_file()}
+        if p.is_file():
+            return {p.name}
+    except Exception:
+        return None
+    return None
+
+
 def _build_ctx(submission: Submission, log_facts: dict,
                assertions: list) -> dict:
     """Assemble the objective-assertion ctx by SPLITTING inputs by source (#44).
@@ -184,6 +218,12 @@ def _build_ctx(submission: Submission, log_facts: dict,
     # 2. 机器可验断言的权威输入(人碰不到)。
     ctx["artifact_path"] = submission.artifact_path
     ctx["log_events"] = log_facts.get("events", [])
+    # 产物文件名集合: 从服务端落盘的产物(zip/文件夹/单文件)提取 basename 集合,
+    # 供 artifact_filenames_equal/superset 这类「产物即答案」的机器断言自动比对
+    # (如 T15 文件重命名)。权威来源、人碰不到。提不到 -> 不设键(断言判 False)。
+    names = _artifact_filenames(submission.artifact_path)
+    if names is not None:
+        ctx["artifact_filenames"] = names
     # 3. 从产物/日志派生的机器上下文(MVP: 无自动提取器 -> 缺键 -> equals 判 False)。
     for k, v in (submission.machine_ctx or {}).items():
         ctx.setdefault(k, v)
