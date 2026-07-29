@@ -173,13 +173,18 @@ def start_ai(con, report_id: str, *, branch_name: str | None = None,
 
 def mark_patch_ready(con, report_id: str, *, diff_ref: str | None = None,
                      test_result: str | None = None, **kw) -> dict:
-    """ai-working -> patch-ready: 低危 diff + 冒烟过, 附 diff/测试结果 (C), 等 owner 审。"""
+    """ai-working -> patch-ready: 低危 diff + 冒烟过, 附 diff/测试结果 (C), 等 owner 审。
+
+    patch-ready 是成功态: 顺带清掉上一轮 (needs-human/ai-failed 后重试) 残留的
+    diagnosis —— 否则 owner 会在一份「已就绪」的补丁上看到旧的失败诊断, 被误导。
+    """
     fields = dict(kw.pop("fields", {}) or {})
     if diff_ref is not None:
         fields["diff_ref"] = diff_ref
     if test_result is not None:
         fields["test_result"] = test_result
-    return transition(con, report_id, "patch-ready", fields=fields or None, **kw)
+    fields.setdefault("diagnosis", None)   # 成功态清除旧失败诊断, 不误导 owner
+    return transition(con, report_id, "patch-ready", fields=fields, **kw)
 
 
 def mark_needs_human(con, report_id: str, *, diagnosis: str | None = None,

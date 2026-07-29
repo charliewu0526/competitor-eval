@@ -97,3 +97,13 @@
 **冒烟金丝雀 + 自动回滚 (Smoke Canary)** — 单机形态下的上线安全网(ADR-0023):批准补丁 → 在合并后的代码上先起一个**临时端口的新进程** → 跑健康检查+冒烟测试(关键 API 200、前端能加载、核心页不白屏)→ 全过才把主进程/tunnel 切到新版本(旧版留待命),任一步失败自动 `git checkout` 回上一个 good commit + 重启旧版。未验证代码**永不接真实流量**。不做真·分流量金丝雀(要引反向代理网关,过重,留 v2)。**闸门前置**:上线动作若检测到有 in-flight 领题/评测(assignment/submission),排到无活跃任务的安静窗口再执行,不硬重启踹掉正在跑的评测。
 
 **反馈台 (Report Console)** — owner 专属页面,列所有 User Report + 状态 + 待审补丁(diff/测试结果/诊断),`needs-human`/`ai-failed` 高亮待处理。**不塞进现有看板(Finding 池)**,呼应两条流不混。提交者侧只能看自己反馈的**状态**(处理中/已修复/需人工)+ 修复上线后收到「已修复」通知,**看不到 diff 和内部诊断**(避免内部代码细节漏给实习生)。
+
+### 修复 Agent 运行时装配 (MR-C2 #58)
+
+修复 Agent 落成一个 **`*/5 * * * *` 的 violoop generative agenda 任务**(名 `competitor-eval-repair-agent`,capability=`local-automation` 够读码/跑构建/git)。violoop 的 AI 循环本身充当修复 Agent,与状态机之间隔着一个确定性 CLI `pipeline/repair_runner.py`:
+
+- **`claim`** — 原子领走最老的一条 `queued`(状态机 `expected_from` 守卫,天然串行,杜绝并发踩踏),建隔离 git worktree(`board/repair-worktrees/`),把多模态上下文(反馈文字+截图路径+后端日志+低危前端源码切片)dump 到 `<worktree>/.repair_context.json`,打印句柄给 AI。队列空 → `{report_id:null}` 空转 0 退出。
+- **AI 中段** — 只读上下文、只在 worktree 里改**低危前端展示层文件**修 bug。
+- **`finalize`** — 对 worktree 算**真实 git diff**(`diff --name-only` + `ls-files --others`)判定 AI **实际改了哪些文件**——**信 git 不信 AI 自报的 changed_files**,这是最强抗注入护栏(反馈正文/截图/上下文都是注入面,但判定只认物理落盘的文件路径)。全低危 → 跑**前端构建闸**(`bun run build`,对口:修复 Agent 只改前端;且干净 worktree 缺主树未跟踪 fixture 时全量 pytest 会假失败)→ 过则 `patch-ready`(落真实 diff 到 `board/repair-diffs/`)/挂则 `ai-failed`;碰硬禁区/灰区/空改动 → `needs-human`(绝不自动上,丢弃改动);AI `--no-fix` → `needs-human`。无论走哪条,末尾都 remove worktree + 删分支。
+
+**运行时前提(必读)**:① 依赖 owner 这台机器上的 **violoop 在线**才产补丁;violoop 挂了队列保证反馈不丢(排队等回来接着修)。② cron 任务与后端 uvicorn 是**两个进程但连同一个库**:`repair_runner` 读 `board/pg_uri.txt`(后端 `run_pg_backend.py` 写入的自托管 Postgres uri)对齐,无该文件则回落默认 SQLite。③ worktree 落 `board/repair-worktrees/`、候选 diff 落 `board/repair-diffs/`,均在 `board/`(git 忽略)下,不污染主工作树。④ 并发安全 = cron 每 5 分钟串行触发 + `claim` 的状态机守卫双重保证,不会有两个 agent 同改一仓库。
