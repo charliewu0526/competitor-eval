@@ -3,8 +3,8 @@ import {
   Typography, Card, Tag, Spin, Alert, Empty, Select, Button, Space,
   Collapse, List, message, Row, Col,
 } from "antd";
-import { BugOutlined, SaveOutlined } from "@ant-design/icons";
-import { getFindings, getEnums, postJudgment } from "../api";
+import { BugOutlined, SaveOutlined, RobotOutlined } from "@ant-design/icons";
+import { getFindings, getEnums, postJudgment, precheckFinding } from "../api";
 import { InfoTip } from "../glossary.jsx";
 import { useAuth } from "../auth.jsx";
 
@@ -15,6 +15,7 @@ const SUSPECTED = {
   "experience-borrow": { label: "体验可借鉴", color: "purple" },
   "honesty-alert": { label: "诚实度警示", color: "gold" },
   "quality-alert": { label: "质量警示", color: "magenta" },
+  "capability-gap": { label: "能力空白 · 候选新功能", color: "geekblue" },
 };
 
 // 证据来源 -> 人话
@@ -76,8 +77,30 @@ function FindingCard({ f, enums, onSaved, canReview }) {
   const [pj, setPj] = useState(f.product_judgment || undefined);
   const [fc, setFc] = useState(f.final_category || undefined);
   const [saving, setSaving] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiSug, setAiSug] = useState(null);   // {suggested_final_category, suggested_product_judgment, reason, dry_run}
   const dirty = (pj || null) !== (f.product_judgment || null)
     || (fc || null) !== (f.final_category || null);
+
+  // E: AI 预复核 —— 让 AI 先给 final_category/product_judgment 建议 + 理由,人一键采纳或改。
+  const runPrecheck = async () => {
+    setAiBusy(true);
+    try {
+      const r = await precheckFinding(f.id);
+      setAiSug(r.suggestion || null);
+      if (r.suggestion && r.suggestion.dry_run) {
+        message.info(r.suggestion.reason || "AI 预复核不可用(如实标)");
+      }
+    } catch (e) {
+      message.error(e.userMessage || String(e));
+    } finally { setAiBusy(false); }
+  };
+  const adoptAi = () => {
+    if (!aiSug) return;
+    if (aiSug.suggested_final_category) setFc(aiSug.suggested_final_category);
+    if (aiSug.suggested_product_judgment) setPj(aiSug.suggested_product_judgment);
+    message.success("已采纳 AI 建议(仍需你保存拍板)");
+  };
 
   const save = async () => {
     setSaving(true);
@@ -170,6 +193,35 @@ function FindingCard({ f, enums, onSaved, canReview }) {
 
       {evidence.length === 0 && (
         <p style={{ color: "#8c8c8c", marginTop: 0 }}>没有附证据。</p>
+      )}
+
+      {canReview && (
+        <div style={{ marginTop: 12 }}>
+          {!aiSug ? (
+            <Button size="small" icon={<RobotOutlined />} loading={aiBusy}
+              onClick={runPrecheck}>AI 预复核建议</Button>
+          ) : aiSug.dry_run ? (
+            <Alert type="warning" showIcon banner
+              message={aiSug.reason || "AI 预复核不可用(如实标)"} />
+          ) : (
+            <div style={{ background: "#f6ffed", border: "1px solid #b7eb8f",
+              borderRadius: 6, padding: "8px 12px" }}>
+              <Space wrap size={8}>
+                <Tag icon={<RobotOutlined />} color="green">AI 预复核建议</Tag>
+                {aiSug.suggested_final_category &&
+                  <Tag color="geekblue">最终分类:{aiSug.suggested_final_category}</Tag>}
+                {aiSug.suggested_product_judgment &&
+                  <Tag color="blue">产品判断:{aiSug.suggested_product_judgment}</Tag>}
+                <Button size="small" type="link" onClick={adoptAi}>采纳到下方</Button>
+              </Space>
+              {aiSug.reason && <div style={{ color: "#595959", marginTop: 4, fontSize: 13 }}>
+                理由:{aiSug.reason}</div>}
+              <div style={{ color: "#8c8c8c", marginTop: 2, fontSize: 12 }}>
+                AI 只给建议,最终由你保存拍板。
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {canReview ? (

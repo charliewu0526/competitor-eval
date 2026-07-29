@@ -7,7 +7,7 @@ import {
   AuditOutlined, UnorderedListOutlined, AppstoreOutlined, DiffOutlined,
   UserOutlined, LogoutOutlined, SolutionOutlined, DeploymentUnitOutlined,
   TeamOutlined, QuestionCircleOutlined, MessageOutlined, InboxOutlined,
-  DownOutlined,
+  DownOutlined, SearchOutlined,
 } from "@ant-design/icons";
 import { GlossaryProvider } from "./glossary.jsx";
 import { useAuth } from "./auth.jsx";
@@ -28,6 +28,7 @@ import SpotCheck from "./pages/SpotCheck.jsx";
 import Authorizations from "./pages/Authorizations.jsx";
 import Assignments from "./pages/Assignments.jsx";
 import Methods from "./pages/Methods.jsx";
+import Research from "./pages/Research.jsx";
 import Users from "./pages/Users.jsx";
 import Help from "./pages/Help.jsx";
 import Feedback from "./pages/Feedback.jsx";
@@ -55,6 +56,7 @@ const NAV = [
   { key: "/assignments", icon: <SolutionOutlined />, label: "我的任务", minRole: "intern" },
   { key: "/gap-report", icon: <DiffOutlined />, label: "差距归因", minRole: "intern" },
   { key: "/methods", icon: <DeploymentUnitOutlined />, label: "方法沉淀", minRole: "intern" },
+  { key: "/research", icon: <SearchOutlined />, label: "竞品调研", minRole: "reviewer" },
   { key: "/help", icon: <QuestionCircleOutlined />, label: "使用说明", minRole: "intern" },
   { key: "/feedback", icon: <MessageOutlined />, label: "意见反馈", minRole: "intern" },
   { key: "/eval-detail", icon: <TableOutlined />, label: "评测明细", minRole: "reviewer" },
@@ -175,6 +177,7 @@ export default function App() {
               <Route path="/catalog" element={<Guard path="/catalog"><TaskCatalog /></Guard>} />
               <Route path="/assignments" element={<Guard path="/assignments"><Assignments /></Guard>} />
               <Route path="/methods" element={<Guard path="/methods"><Methods /></Guard>} />
+              <Route path="/research" element={<Guard path="/research"><Research /></Guard>} />
               <Route path="/eval-detail" element={<Guard path="/eval-detail"><EvalDetail /></Guard>} />
               <Route path="/leaderboard" element={<Guard path="/leaderboard"><Leaderboard /></Guard>} />
               <Route path="/domain-board" element={<Guard path="/domain-board"><DomainBoard /></Guard>} />

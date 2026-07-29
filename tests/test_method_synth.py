@@ -49,7 +49,7 @@ class TestMethodSynth(unittest.TestCase):
         self.assertEqual(m["status"], "draft")
         self.assertEqual(m["author"], MS.AUTO_AUTHOR)
         self.assertIn("接入联网检索工具", m["draft"])
-        self.assertIn("证据(交付物原文引用)", m["draft"])
+        self.assertIn("证据链(交付物/清单原文引用)", m["draft"])
 
     def test_b_no_citation_skipped(self):
         # 无引用 -> _synthesize_one 应返回 None; 这里让它对空引用真实走一遍。

@@ -134,6 +134,7 @@ const CAT_META = {
   "feature-gap": { color: "red", text: "疑似功能差距 · 该补齐" },
   "experience-borrow": { color: "gold", text: "疑似体验进步 · 可借鉴" },
   "execution-detail": { color: "blue", text: "执行细节更到位" },
+  "capability-gap": { color: "geekblue", text: "疑似能力空白 · 候选新功能" },
 };
 
 function AttributionBlock({ attribution, onRun, running, onSynth, synthing, synthResult }) {
@@ -163,11 +164,25 @@ function AttributionBlock({ attribution, onRun, running, onSynth, synthing, synt
     return <Empty description={a.note
       || "归因未发现竞品比我们明显更好之处(不硬凑)。"} />;
   }
+  const TIER_META = {
+    "process-level": { color: "green", text: "过程级证据(有执行日志)",
+      tip: "有执行日志,能看清竞品一步步怎么做到的,归因确定性最高。" },
+    "artifact-level": { color: "gold", text: "仅成品级证据(无日志)",
+      tip: "拿不到执行日志,只能凭双方成品反推竞品做到了什么 —— 看得到结果、看不清过程,结论确定性天然弱,confidence 已相应封顶。" },
+    "unavailable": { color: "default", text: "证据不可得",
+      tip: "双方交付物都拿不到,无法归因。" },
+  };
+  const tier = TIER_META[a.evidence_tier] || TIER_META["process-level"];
   return (
     <Space direction="vertical" size={12} style={{ width: "100%" }}>
-      <span style={{ fontSize: 12, color: "#8c8c8c" }}>
-        引擎 {a.engine} · 机器只给疑似判断 + 原文引用,最终定性由 PM 拍板。
-      </span>
+      <Space wrap size={8}>
+        <Tooltip title={tier.tip}>
+          <Tag color={tier.color}>{tier.text}</Tag>
+        </Tooltip>
+        <span style={{ fontSize: 12, color: "#8c8c8c" }}>
+          引擎 {a.engine} · 机器只给疑似判断 + 原文引用,最终定性由 PM 拍板。
+        </span>
+      </Space>
       {a.points.map((p, i) => {
         const meta = CAT_META[p.suspected_category] || CAT_META["execution-detail"];
         return (

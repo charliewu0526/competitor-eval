@@ -5,9 +5,11 @@ import {
 } from "antd";
 import {
   PlusOutlined, CheckOutlined, ExportOutlined, EyeOutlined, ReloadOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import {
   getMethods, createMethod, approveMethod, previewMethod, exportMethod,
+  precheckMethod,
 } from "../api";
 import { useAuth } from "../auth.jsx";
 import { InfoTip } from "../glossary.jsx";
@@ -17,6 +19,58 @@ const STATUS = {
   approved: { label: "已把关(可导出)", color: "blue" },
   exported: { label: "已导出给研发", color: "green" },
 };
+// 结构化卡片(A): 后端 draft 以 `## 小节标题` 分段。把每个小节渲染成带标题的
+// 分区块,而不是一坨 pre-wrap 文本,让研发/复核逐项看清。含「待补」的段标黄提示。
+function DraftSections({ draft }) {
+  if (!draft) return null;
+  // 兼容旧的非结构化 draft(无 `## `):直接 pre-wrap 显示。
+  if (!draft.includes("## ")) {
+    return <div style={{ whiteSpace: "pre-wrap", color: "#434343" }}>{draft}</div>;
+  }
+  // 引用块(> 开头的来源标注)单独抽出,放在末尾弱化显示。
+  const lines = draft.split("\n");
+  const sections = [];
+  let cur = null;
+  const foot = [];
+  for (const ln of lines) {
+    if (ln.startsWith("## ")) {
+      cur = { title: ln.slice(3).trim(), body: [] };
+      sections.push(cur);
+    } else if (ln.startsWith("> ")) {
+      foot.push(ln.slice(2));
+    } else if (cur) {
+      cur.body.push(ln);
+    }
+  }
+  return (
+    <div>
+      {sections.map((s, i) => {
+        const body = s.body.join("\n").trim();
+        const todo = body.includes("待补");
+        return (
+          <div key={i} style={{ marginBottom: 10 }}>
+            <div style={{ fontWeight: 600, color: "#1677ff", fontSize: 13, marginBottom: 2 }}>
+              {s.title}
+            </div>
+            <div style={{ whiteSpace: "pre-wrap",
+              color: todo ? "#ad6800" : "#434343",
+              background: todo ? "#fffbe6" : "transparent",
+              borderRadius: todo ? 4 : 0, padding: todo ? "2px 6px" : 0 }}>
+              {body || "—"}
+            </div>
+          </div>
+        );
+      })}
+      {foot.length > 0 && (
+        <div style={{ color: "#8c8c8c", fontSize: 12, marginTop: 8,
+          borderTop: "1px dashed #f0f0f0", paddingTop: 6 }}>
+          {foot.join("\n")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function statusTag(s) {
   const t = STATUS[s] || { label: s, color: "default" };
   return <Tag color={t.color}>{t.label}</Tag>;
@@ -68,6 +122,21 @@ function CreateMethodButton({ onDone }) {
 function MethodCard({ m, canGate, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [doc, setDoc] = useState(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiSug, setAiSug] = useState(null);   // {suggestion: approve|revise, reason, dry_run}
+
+  // E: AI 预复核 —— 让 AI 先给 approve/revise 建议 + 理由,人再拍板把关。
+  const runPrecheck = async () => {
+    setAiBusy(true);
+    try {
+      const r = await precheckMethod(m.id);
+      setAiSug(r.suggestion || null);
+      if (r.suggestion && r.suggestion.dry_run) {
+        message.info(r.suggestion.reason || "AI 预复核不可用(如实标)");
+      }
+    } catch (e) { message.error(e.userMessage || String(e)); }
+    finally { setAiBusy(false); }
+  };
 
   const doApprove = async () => {
     setBusy(true);
@@ -98,6 +167,9 @@ function MethodCard({ m, canGate, onChanged }) {
       extra={
         <Space>
           {canGate && m.status === "draft" && (
+            <Button icon={<RobotOutlined />} loading={aiBusy} onClick={runPrecheck}>AI 预复核</Button>
+          )}
+          {canGate && m.status === "draft" && (
             <Button type="primary" icon={<CheckOutlined />} loading={busy} onClick={doApprove}>把关通过</Button>
           )}
           {canGate && (
@@ -108,7 +180,28 @@ function MethodCard({ m, canGate, onChanged }) {
           )}
         </Space>
       }>
-      <div style={{ whiteSpace: "pre-wrap", color: "#434343" }}>{m.draft}</div>
+      <DraftSections draft={m.draft} />
+      {aiSug && (
+        aiSug.dry_run ? (
+          <Alert type="warning" showIcon banner style={{ marginTop: 8 }}
+            message={aiSug.reason || "AI 预复核不可用(如实标)"} />
+        ) : (
+          <div style={{ marginTop: 8, background: "#f6ffed",
+            border: "1px solid #b7eb8f", borderRadius: 6, padding: "8px 12px" }}>
+            <Space wrap size={8}>
+              <Tag icon={<RobotOutlined />} color="green">AI 预复核建议</Tag>
+              <Tag color={aiSug.suggestion === "approve" ? "blue" : "orange"}>
+                {aiSug.suggestion === "approve" ? "建议:可通过" : "建议:打回补充"}
+              </Tag>
+            </Space>
+            {aiSug.reason && <div style={{ color: "#595959", marginTop: 4, fontSize: 13 }}>
+              理由:{aiSug.reason}</div>}
+            <div style={{ color: "#8c8c8c", marginTop: 2, fontSize: 12 }}>
+              AI 只给建议,把关通过与否由你拍板。
+            </div>
+          </div>
+        )
+      )}
       {doc && (
         <>
           <Divider style={{ margin: "12px 0" }}>研发可读文档</Divider>

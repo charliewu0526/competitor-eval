@@ -227,6 +227,23 @@ CREATE TABLE IF NOT EXISTS user_report (
 -- reports_by_status / 反馈台按 status 过滤与高亮 (needs-human/ai-failed), 建索引.
 CREATE INDEX IF NOT EXISTS idx_user_report_status ON user_report(status);
 CREATE INDEX IF NOT EXISTS idx_user_report_submitter ON user_report(submitter);
+
+-- === E (PRD 0004 二期) AI 预复核一致率日志 =============================
+-- 记录 AI 预复核给的建议 vs 人最终拍板的结论, 用于观测 AI 复核可信度。
+-- AI 只给建议, 人是最终闸 (ADR: 不让 AI 自己批自己); 本表只记 provenance, 不参与判定。
+-- agreed: 人最终结论是否与 AI 建议一致 (NULL = 人还没拍板 / 无可比建议)。
+CREATE TABLE IF NOT EXISTS precheck_log (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_type          TEXT NOT NULL,      -- finding | method
+    target_id            TEXT NOT NULL,      -- findings.id / methods.id (字符串化)
+    suggestion_json      TEXT,               -- AI 建议全文 (precheck 输出)
+    human_decision       TEXT,               -- 人最终结论 (final_category / approve|revise)
+    agreed               INTEGER,            -- 1/0/NULL: 人是否采纳了 AI 建议
+    reviewer             TEXT,               -- 拍板人 users.id
+    created_ts           REAL,
+    decided_ts           REAL
+);
+CREATE INDEX IF NOT EXISTS idx_precheck_target ON precheck_log(target_type, target_id);
 """
 
 
@@ -480,6 +497,95 @@ def set_judgment(con: sqlite3.Connection, finding_id: int,
         (product_judgment, final_category, finding_id))
     con.commit()
     return cur.rowcount > 0
+
+
+# --- E (PRD 0004 二期): AI 预复核一致率日志 --------------------------------
+def log_precheck_suggestion(con: sqlite3.Connection, *, target_type: str,
+                            target_id: str, suggestion: dict) -> int:
+    """记一条 AI 预复核建议(人还没拍板, agreed=NULL)。返回 log id。
+
+    幂等策略: 同 (target_type, target_id) 只保留最新一条建议 —— 先删旧未决记录再插,
+    避免重复预复核堆积。已决(agreed 非空)的历史记录保留不动(留痕)。"""
+    con.execute(
+        "DELETE FROM precheck_log WHERE target_type=? AND target_id=? AND agreed IS NULL",
+        (target_type, str(target_id)))
+    # RETURNING id 跨双库拿自增主键(SQLite>=3.35 与 PG 都支持), 避免 lastrowid 在
+    # PG 上恒为 None(MR-1b #51 方言遗漏, 与 upsert_method 保持一致写法)。
+    row = con.execute(
+        """INSERT INTO precheck_log (target_type, target_id, suggestion_json,
+           human_decision, agreed, reviewer, created_ts, decided_ts)
+           VALUES (?,?,?,?,?,?,?,?) RETURNING id""",
+        (target_type, str(target_id), json.dumps(suggestion, ensure_ascii=False),
+         None, None, None, time.time(), None)).fetchone()
+    con.commit()
+    return row["id"]
+
+
+def _latest_open_suggestion(con: sqlite3.Connection, target_type: str,
+                            target_id: str) -> dict | None:
+    row = con.execute(
+        """SELECT * FROM precheck_log WHERE target_type=? AND target_id=?
+           AND agreed IS NULL ORDER BY id DESC LIMIT 1""",
+        (target_type, str(target_id))).fetchone()
+    return dict(row) if row else None
+
+
+def record_precheck_decision(con: sqlite3.Connection, *, target_type: str,
+                             target_id: str, human_decision: str,
+                             suggested_value: str | None,
+                             reviewer: str = "") -> bool:
+    """人拍板后回填一致率: 把最新未决建议标记为已决, 记 human_decision 与是否采纳。
+
+    agreed = (人最终结论 == AI 建议值)。无对应未决建议 -> 返回 False(不硬造)。
+    suggested_value: 从当初 AI 建议里取出的可比值(final_category 或 approve/revise)。"""
+    row = _latest_open_suggestion(con, target_type, str(target_id))
+    if not row:
+        return False
+    # 一致率语义: 只有 AI 给出了**可比建议**(suggested_value 非空)才计 1/0。
+    # AI 弃权/越界(suggested_value 为 None)-> agreed=NULL, 不计入一致率分母
+    # (否则把"AI 没给可比建议"误算成"人机不一致", 拉低真实一致率)。
+    if suggested_value is None:
+        agreed = None
+    else:
+        agreed = 1 if human_decision == suggested_value else 0
+    con.execute(
+        """UPDATE precheck_log SET human_decision=?, agreed=?, reviewer=?,
+           decided_ts=? WHERE id=?""",
+        (human_decision, agreed, reviewer, time.time(), row["id"]))
+    con.commit()
+    return True
+
+
+def precheck_agreement(con: sqlite3.Connection,
+                       target_type: str | None = None) -> dict:
+    """AI 预复核 vs 人工最终结论的一致率汇总(只统计已决记录)。"""
+    sql = "SELECT target_type, agreed FROM precheck_log WHERE agreed IS NOT NULL"
+    params: list = []
+    if target_type:
+        sql += " AND target_type=?"
+        params.append(target_type)
+    rows = list(con.execute(sql, tuple(params)))
+    decided = len(rows)
+    agreed = sum(1 for r in rows if r["agreed"] == 1)
+    return {"decided": decided, "agreed": agreed,
+            "agreement_rate": round(agreed / decided, 4) if decided else None}
+
+
+def get_precheck_suggestion(con: sqlite3.Connection, target_type: str,
+                            target_id: str) -> dict | None:
+    """取某目标最新的 AI 建议(供复核页展示)。已决/未决都返回最新一条。"""
+    row = con.execute(
+        """SELECT * FROM precheck_log WHERE target_type=? AND target_id=?
+           ORDER BY id DESC LIMIT 1""",
+        (target_type, str(target_id))).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    try:
+        d["suggestion"] = json.loads(d.get("suggestion_json") or "null")
+    except Exception:
+        d["suggestion"] = None
+    return d
 
 
 # --- G2: authorization records -------------------------------------------

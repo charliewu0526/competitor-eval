@@ -128,16 +128,77 @@ class TaskAttribution:
     engine: str                # 用的模型标识,可追溯
     points: list[AttributionPoint]
     note: str | None = None
+    evidence_tier: str = "process-level"   # process-level | artifact-level | unavailable
 
     def as_dict(self) -> dict:
         return {"task_id": self.task_id, "baseline": self.baseline,
                 "dry_run": self.dry_run, "engine": self.engine,
-                "note": self.note,
+                "note": self.note, "evidence_tier": self.evidence_tier,
                 "points": [p.as_dict() for p in self.points]}
+
+
+# --- 证据档位 (B: 交付物对比降级路径) --------------------------------------
+# 归因证据分三档,决定归因走「过程级」还是「成品级」路径 + confidence 上限:
+#   process-level  有执行日志(执行时间线/过程),能看清竞品「怎么一步步做到的」。
+#   artifact-level  只有成品交付物(无日志),只能凭成品反推「它做到了什么」——
+#                   看得到结果、看不清过程,结论确定性天然弱,confidence 封顶。
+#   unavailable     两者都拿不到,无法归因(如实标,不脑补)。
+PROCESS_LEVEL = "process-level"
+ARTIFACT_LEVEL = "artifact-level"
+TIER_UNAVAILABLE = "unavailable"
+# artifact-level 结论的 confidence 上限:即便引用命中,也不给 normal,只到 tentative
+# ——「仅凭成品反推」比「有日志看过程」弱一档,不许冒充强证据。
+_TIER_CONF_CAP = {PROCESS_LEVEL: "normal", ARTIFACT_LEVEL: "tentative",
+                  TIER_UNAVAILABLE: "low_confidence"}
+_CONF_RANK = {"low_confidence": 0, "tentative": 1, "normal": 2}
+# 日志类文件名特征:执行日志包里的时间线/过程记录(非成品)。
+_LOG_HINTS = ("execution-log", "execution_log", "exec-log", "log_bundle",
+              "timeline", ".log")
+
+
+def _docs_have_log(docs: list[ArtifactDoc]) -> bool:
+    """这批交付物里是否含执行日志(过程级证据)。仅看文件名特征,纯派生。"""
+    for d in docs:
+        low = (d.source_file or "").lower()
+        if any(h in low for h in _LOG_HINTS):
+            return True
+    return False
+
+
+def evidence_tier(docs_by_prod: dict, competitors: list[str],
+                  baseline: str = "vio") -> str:
+    """按可得证据判归因档位(process/artifact/unavailable)。
+
+    有任一相关产品(基线或竞品)带执行日志 -> process-level(能看过程);
+    否则只要有可读成品交付物 -> artifact-level(仅凭成品反推);
+    连成品都没有 -> unavailable(无法归因)。
+    """
+    rel = [baseline] + list(competitors)
+    any_docs = any(docs_by_prod.get(p) for p in rel)
+    if not any_docs:
+        return TIER_UNAVAILABLE
+    any_log = any(_docs_have_log(docs_by_prod.get(p) or []) for p in rel)
+    return PROCESS_LEVEL if any_log else ARTIFACT_LEVEL
+
+
+def _cap_confidence_by_tier(conf: str, tier: str) -> str:
+    """把一条结论的 confidence 按档位封顶(artifact-level 不许到 normal)。"""
+    cap = _TIER_CONF_CAP.get(tier, "low_confidence")
+    if _CONF_RANK.get(conf, 0) > _CONF_RANK.get(cap, 0):
+        return cap
+    return conf
 
 
 # --- Claude 最强模型归因 ---------------------------------------------------
 _ENGINE = os.environ.get("GAP_ATTRIB_MODEL", "claude-opus-4-8")
+
+# artifact-level 降级路径专用提示片段:提醒模型只看得到成品、看不到过程,
+# 结论要标不确定性,别把「成品长这样」脑补成「它一定是这么做的」。
+_ARTIFACT_HINT = """
+【证据档位: 仅成品级】本次拿不到执行日志,你只能看到双方的**成品交付物**,看不到
+竞品一步步怎么做的过程。因此:只依据成品里能直接看到的差异下结论,用词标明不确定性
+(如「成品显示…,推测其可能…」),绝不把「成品呈现的结果」当成「确定的实现过程」。
+证据不足以判断竞品是否真的更好时,points 返回空数组。"""
 
 _SYS = """你是竞品评测系统的差距归因分析器。基线产品是 vio(Violoop)。
 给你一道任务的 expected(判定标准)、以及基线 vio 与某竞品各自的交付物原文。
@@ -269,14 +330,19 @@ def attribute_task(task_id: str, competitors: list[str], expected_text: str = ""
     if not any(docs_by_prod.get(c) for c in competitors):
         return TaskAttribution(task_id=task_id, baseline=baseline, dry_run=True,
                                engine=_ENGINE, points=[],
+                               evidence_tier=TIER_UNAVAILABLE,
                                note="竞品交付物缺失或不可读,无法归因(如实标)")
+
+    # B: 判归因档位。有日志走过程级;仅成品走降级路径(提示模型只凭成品反推)。
+    tier = evidence_tier(docs_by_prod, competitors, baseline=baseline)
 
     comp_block = "\n\n".join(
         f"## 竞品 {c} 的交付物\n{_docs_block(docs_by_prod.get(c, []))}"
         for c in competitors)
+    artifact_hint = _ARTIFACT_HINT if tier == ARTIFACT_LEVEL else ""
     prompt = (f"# 任务 {task_id}\n\n## 判定标准(expected)\n{expected_text or '(未提供)'}\n\n"
               f"## 基线 {baseline}(Violoop)的交付物\n{_docs_block(base_docs)}\n\n"
-              f"{comp_block}\n\n"
+              f"{comp_block}\n{artifact_hint}\n\n"
               "请按 system 指令找出竞品比 vio 好在哪、多做了什么,只输出 JSON。")
 
     try:

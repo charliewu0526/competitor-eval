@@ -1,0 +1,79 @@
+{
+  "product": "vio",
+  "updated": "2026-07-29",
+  "note": "vio(Violoop)自有能力清单,作差集基线。从 registry/competitors.json vio 域(全 7 域,原生本地桌面操控)+ 已知产品能力整理。差集引擎用此清单判『竞品已上线、vio 缺』的候选新功能。仅登记 vio 确有的能力入口,缺的不硬写(否则差集会漏候选)。",
+  "entries": [
+    {
+      "capability": "原生本地桌面操控:视觉+HID 直接操作任意本地 GUI 应用(微信/Excel/浏览器/无 API 软件)",
+      "status": "shipped",
+      "evidence": "registry vio can_operate_local_desktop=true,全 5 桌面域参赛",
+      "source": "registry/competitors.json",
+      "domain": "computer-control",
+      "tags": ["local-desktop", "gui-control", "vision-hid"]
+    },
+    {
+      "capability": "微信客户端操控:发消息/找联系人/发文件(GUI 直控)",
+      "status": "shipped",
+      "evidence": "T1-wechat-send 参赛且得分",
+      "source": "scores 表 T1",
+      "domain": "wechat-im",
+      "tags": ["wechat", "im"]
+    },
+    {
+      "capability": "Excel/Office 桌面 GUI 操控:求和/排程报表/脏数据清洗(操控真实窗口)",
+      "status": "shipped",
+      "evidence": "T2/T10/T11 excel 题参赛",
+      "source": "scores 表 T2/T10/T11",
+      "domain": "office-suite",
+      "tags": ["excel", "office", "gui"]
+    },
+    {
+      "capability": "浏览器网页操作:表单填写/网页抽取(driver 或视觉)",
+      "status": "shipped",
+      "evidence": "T19-web-form / T3-web-extract 参赛",
+      "source": "scores 表 T19/T3",
+      "domain": "browser-web",
+      "tags": ["browser", "web-form"]
+    },
+    {
+      "capability": "本地文件操作:重命名/归档/清理/跨 app 搬运",
+      "status": "shipped",
+      "evidence": "T15-file-rename / T16-cross-app-archive / T17-cleanup 参赛",
+      "source": "scores 表 T15/T16/T17",
+      "domain": "computer-control",
+      "tags": ["file-ops", "rename", "archive"]
+    },
+    {
+      "capability": "跨 app 职业工作流:取数→交叉核对→判断→产出→沟通的一段完整岗位工作",
+      "status": "shipped",
+      "evidence": "W1-W5 professional-workflow 题参赛(vio/claude)",
+      "source": "tasks W1-W5",
+      "domain": "professional-workflow",
+      "tags": ["workflow", "cross-app", "long-horizon"]
+    },
+    {
+      "capability": "定时任务/日程调度:cron 式定时触发本地自动化(agenda)",
+      "status": "shipped",
+      "evidence": "vio agenda 定时任务能力(本平台自身即用 agenda 调度)",
+      "source": "产品自身能力",
+      "domain": "assistant-integration",
+      "tags": ["scheduled-automation", "cron"]
+    },
+    {
+      "capability": "邮件三分类 + 起草回复 + 会前 briefing(助理集成域)",
+      "status": "shipped",
+      "evidence": "TA1-email-triage-draft / TA2-morning-briefing / TA3-meeting-prep vio 高分参赛",
+      "source": "scores 表 TA1/TA2/TA3",
+      "domain": "assistant-integration",
+      "tags": ["email-triage", "draft-reply", "briefing", "meeting-prep"]
+    },
+    {
+      "capability": "文档/演示生成:自然语言生成文档与 deck",
+      "status": "shipped",
+      "evidence": "TA5-doc-deck-gen vio 满分参赛",
+      "source": "scores 表 TA5",
+      "domain": "office-suite",
+      "tags": ["doc-generation", "deck-generation"]
+    }
+  ]
+}

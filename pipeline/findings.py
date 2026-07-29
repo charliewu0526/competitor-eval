@@ -23,9 +23,16 @@ BASELINE = "vio"
 # PM-fillable enums (machine never sets these; here for the board's dropdowns).
 PRODUCT_JUDGMENT_VALUES = ("必须补齐", "值得借鉴", "观察中", "不适合Violoop")
 FINAL_CATEGORY_VALUES = ("bug", "feature-gap", "experience-borrow",
-                         "honesty-alert", "not-actionable")
+                         "honesty-alert", "capability-gap", "not-actionable")
+# capability-gap (2026-07 新增): 「能力空白」——vio 根本没有这个能力入口 (区别于
+# execution-gap: 有入口、试了但做错)。两个来源汇入此类:
+#   1. 功能A (vio_gap): vio 失败题, 归因引擎判为「无入口」而非「执行差」。
+#   2. 功能B (capability_census): 竞品能力清单里已上线、vio 清单缺失的条目。
+# 与 feature-gap 的分工: feature-gap 是「竞品做到了、vio 这道题失败」的现象级观察
+# (同题对打); capability-gap 是「vio 缺这个能力入口」的定性 (跨题/清单差集), 单独
+# 成类送方法沉淀作候选新功能。机器仍只标疑似 + 带证据, PM/AI 复核拍板。
 SUSPECTED_VALUES = ("suspected-bug", "feature-gap", "experience-borrow",
-                    "honesty-alert", "quality-alert")
+                    "honesty-alert", "quality-alert", "capability-gap")
 
 # Thresholds for the "competitor meaningfully ahead" rules.
 CAPABILITY_LEAD = 0.15   # sample_score gap that counts as a capability lead

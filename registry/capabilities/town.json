@@ -1,0 +1,127 @@
+{
+  "product": "town",
+  "updated": "2026-07-29",
+  "note": "从 outputs/competitor-town-ai.md 的『真实 vs 宣传』切分结构化。shipped=✅docs/changelog/一手体验可验证;limited=🟡部分真实有限制;marketing=❌纯宣传话术。人工整理首份样本,后续可经 LLM 抽取补充(candidate 待复核)。",
+  "entries": [
+    {
+      "capability": "专属 @town.com 邮箱入口,可转发邮件 / 在 Slack/WhatsApp/Telegram 里对话调用",
+      "status": "shipped",
+      "evidence": "官网 + 多篇评测一致,一手体验帖实测",
+      "source": "官网 + consumerstartups/thisandthat 体验帖",
+      "domain": "assistant-integration",
+      "tags": ["multi-channel", "email-inbox", "im-entry"]
+    },
+    {
+      "capability": "50+ SaaS 集成(Gmail、Google Workspace、Slack、Notion、Linear、HubSpot、Salesforce、Jira、GitHub、Airtable、QuickBooks 等)",
+      "status": "shipped",
+      "evidence": "docs 集成表逐条列出",
+      "source": "docs 集成表",
+      "domain": "assistant-integration",
+      "tags": ["integrations", "crm", "saas-connectors"]
+    },
+    {
+      "capability": "预置 Routines(定时自动化):Morning Briefing、Newsletter Digest、Meeting Briefing、Deal Spotter、GitHub Reports、Invoice & Expense Logger",
+      "status": "shipped",
+      "evidence": "docs Routines 索引;HN 上 Town 工程师确认 morning briefing 是 stock workflow",
+      "source": "docs Routines 索引 / HN",
+      "domain": "assistant-integration",
+      "tags": ["scheduled-automation", "routines", "briefing"]
+    },
+    {
+      "capability": "Town Docs:AI 与你协作写文档,inline 高亮、无需 approve/decline",
+      "status": "shipped",
+      "evidence": "官网 features/town-docs",
+      "source": "官网 features/town-docs",
+      "domain": "office-suite",
+      "tags": ["collaborative-doc", "inline-edit"]
+    },
+    {
+      "capability": "Town Decks:自然语言生成演示 deck,可导出 PDF/HTML、分享链接",
+      "status": "shipped",
+      "evidence": "官网 features/decks",
+      "source": "官网 features/decks",
+      "domain": "office-suite",
+      "tags": ["deck-generation", "nl-to-slides", "export"]
+    },
+    {
+      "capability": "『审批优先』安全模型:默认不经批准不发邮件/不改文档/不做破坏性操作,可逐级放开自主度",
+      "status": "shipped",
+      "evidence": "官网 features/security",
+      "source": "官网 features/security",
+      "domain": "assistant-integration",
+      "tags": ["approval-first", "safety", "autonomy-dial"]
+    },
+    {
+      "capability": "会前 briefing、按你语气起草回复、日程冲突检测",
+      "status": "shipped",
+      "evidence": "consumerstartups、LinkedIn 一手体验都实测到",
+      "source": "consumerstartups / LinkedIn 体验帖",
+      "domain": "assistant-integration",
+      "tags": ["meeting-prep", "voice-match-draft", "calendar-conflict"]
+    },
+    {
+      "capability": "GA4 只读集成(拉周流量报告)",
+      "status": "shipped",
+      "evidence": "changelog 2026-07-21",
+      "source": "changelog 2026-07-21",
+      "domain": "assistant-integration",
+      "tags": ["analytics", "ga4", "read-only"]
+    },
+    {
+      "capability": "公开 Routine 库、更准的积分用量显示",
+      "status": "shipped",
+      "evidence": "changelog 2026-07-20/21",
+      "source": "changelog 2026-07-20/21",
+      "domain": "assistant-integration",
+      "tags": ["routine-library", "usage-metering"]
+    },
+    {
+      "capability": "『跨你所有工具』—— 实际邮件+日历只支持 Google,无完整 Outlook/M365",
+      "status": "limited",
+      "evidence": "约一半职场用户被挡在门外;7 月 changelog 才出现 Outlook drafts 同步,仅草稿层面萌芽",
+      "source": "changelog / 一手体验",
+      "domain": "assistant-integration",
+      "tags": ["google-only", "outlook-gap"]
+    },
+    {
+      "capability": "『越用越自主 / day-one 学会你』—— 上手快属实,但完全自主执行仍需手动放开审批,scope 偏窄",
+      "status": "limited",
+      "evidence": "默认全程要点确认;scope 目前仅邮件三分类/briefing/起草/调研",
+      "source": "多篇一手体验",
+      "domain": "assistant-integration",
+      "tags": ["autonomy-conservative", "narrow-scope"]
+    },
+    {
+      "capability": "『无限帮你干活』—— 实为积分制,重度自动化会撞用量上限",
+      "status": "limited",
+      "evidence": "routine 跑得越勤/越复杂越烧积分,非固定不限量",
+      "source": "pricing / 一手体验",
+      "domain": "assistant-integration",
+      "tags": ["credit-metered", "usage-cap"]
+    },
+    {
+      "capability": "『数据本地/隐私』—— 实为 cloud-only 云端架构,无自托管/私有化选项",
+      "status": "limited",
+      "evidence": "承诺不卖数据/不拿 Google 数据训模型,但明确 cloud-only",
+      "source": "官网 security",
+      "domain": "assistant-integration",
+      "tags": ["cloud-only", "no-self-host"]
+    },
+    {
+      "capability": "『像 raw denim / 皮夹一样贴合你』『多了一个半员工』",
+      "status": "marketing",
+      "evidence": "关系营销叙事,不是功能",
+      "source": "官网营销文案",
+      "domain": null,
+      "tags": ["brand-narrative"]
+    },
+    {
+      "capability": "『在你意识到之前就把活干了』的全自动主动性",
+      "status": "marketing",
+      "evidence": "实测更多是『建议 + 待批草稿』,不是无人值守闭环",
+      "source": "官网营销文案 vs 一手体验",
+      "domain": null,
+      "tags": ["autonomy-hype"]
+    }
+  ]
+}

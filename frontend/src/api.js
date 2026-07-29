@@ -83,6 +83,27 @@ export const synthesizeMethods = (taskId, baseline = "vio") =>
 
 export const postJudgment = (id, body) =>
   api.post(`/findings/${id}/judgment`, body).then((r) => r.data);
+
+// --- E (PRD 0004 二期) AI 预复核:给建议 + 一致率 -----------------------
+// 对一条 finding 跑 AI 预复核(慢调用,放宽超时);建议落 precheck_log 待人确认。
+export const precheckFinding = (id) =>
+  api.post(`/findings/${id}/precheck`, null, { timeout: 120000 }).then((r) => r.data);
+export const precheckMethod = (id) =>
+  api.post(`/methods/${id}/precheck`, null, { timeout: 120000 }).then((r) => r.data);
+export const getPrecheckAgreement = (targetType) =>
+  api.get("/precheck/agreement", { params: targetType ? { target_type: targetType } : {} })
+    .then((r) => r.data);
+
+// --- D (PRD 0004 二期) 竞品自动调研:贴链接抓取 + 复核 candidate ----------
+// 贴官网/新闻/社媒链接 → 抓取 → LLM 抽能力 → 落 candidate。抓取+调模型慢,放宽超时。
+export const runCapabilityResearch = (product, sourceUrls, persist = true) =>
+  api.post("/capability-research",
+    { product, source_urls: sourceUrls, persist }, { timeout: 180000 })
+    .then((r) => r.data);
+// 复核一条 candidate 能力条目:approve=true 升 shipped 进差集。
+export const reviewCapability = (product, capability, approve) =>
+  api.post(`/capabilities/${encodeURIComponent(product)}/review`,
+    { capability, approve }).then((r) => r.data);
 export const rebuildSpotcheck = () =>
   api.post("/spotcheck/rebuild").then((r) => r.data);
 export const postVerdict = (id, body) =>

@@ -872,6 +872,18 @@ def set_judgment(finding_id: int, body: JudgmentIn, user=Depends(current_user)):
                              final_category=body.final_category)
     if not hit:
         raise HTTPException(404, f"finding {finding_id} 不存在")  # H-2: 不再静默 200
+    # E 一致率: 人拍板 final_category == AI 预复核建议? (有未决建议才记)
+    try:
+        sug = store.get_precheck_suggestion(_con(), "finding", str(finding_id))
+        if sug and sug.get("agreed") is None and body.final_category:
+            store.record_precheck_decision(
+                _con(), target_type="finding", target_id=str(finding_id),
+                human_decision=body.final_category,
+                suggested_value=(sug.get("suggestion") or {}).get("suggested_final_category"),
+                reviewer=user.get("id", ""))
+    except Exception:
+        logging.getLogger("competitor-eval").exception(
+            "记一致率失败 finding_id=%s", finding_id)
     return {"ok": True, "id": finding_id}
 
 
@@ -1006,6 +1018,223 @@ def synthesize_methods(task_id: str, baseline: str = "vio",
             "count": len(created)}
 
 
+@app.post("/api/vio-gap/{task_id}/classify")
+def classify_vio_gap(task_id: str, baseline: str = "vio",
+                     synthesize: bool = True, user=Depends(current_user)):
+    """功能A: 对 vio 失败题反转成信号 —— 归因引擎判「执行差距 vs 能力空白」。
+
+    reviewer/PM 触发(gate_method 权限, 与把关同级)。读 vio 交付物 + expected,调
+    Claude 最强模型判 execution-gap / capability-gap(带 vio 交付物原文引用)。只有
+    capability-gap 落 Finding(subject=vio, suspected_category=capability-gap)并(默认)
+    自动提炼成方法初稿(draft, 待人/AI 复核)。execution-gap / 无引用 / dry_run 不落。
+    返回归因判定 + 落库的 Finding + 本次新建的方法 draft。
+    """
+    try:
+        RBAC.require(user, "gate_method")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    con = _con()
+    scores = store.all_scores(con)
+    vio_row = next((s for s in scores
+                    if s.get("task_id") == task_id and s.get("product") == baseline), None)
+    if vio_row is None:
+        raise HTTPException(404, f"no {baseline} score for this task")
+    # 只对「基线确实失败」的题反转成信号 —— vio 通过的题没有失败可归因。
+    failed = (vio_row.get("objective_failed_primary")
+              or vio_row.get("gate") == "cannot-reach"
+              or (vio_row.get("sample_score") is not None
+                  and float(vio_row.get("sample_score") or 0) <= 0.0))
+    if not failed:
+        return {"task_id": task_id, "skipped": True,
+                "reason": f"{baseline} 在该题未失败, 无失败可归因(能力空白反转仅针对失败题)",
+                "verdict": None, "finding": None, "created": []}
+
+    from pipeline import vio_gap as VG
+    result = VG.classify_vio_failure(task_id, baseline=baseline)
+    rd = result.as_dict()
+
+    finding_out = None
+    created = []
+    if rd.get("finding"):
+        fid = store.upsert_finding(con, rd["finding"])
+        finding_out = {**rd["finding"], "id": fid}
+        if synthesize:
+            from pipeline import method_synth as MSYN
+            created = MSYN.synthesize_from_vio_gap(con, task_id, rd)
+    return {"task_id": task_id, "verdict": rd.get("verdict"),
+            "confidence": rd.get("confidence"), "dry_run": rd.get("dry_run"),
+            "note": rd.get("note"), "finding": finding_out,
+            "created": [_method_view(m) for m in created], "count": len(created)}
+
+
+@app.post("/api/capability-census/{rival}")
+def run_capability_census(rival: str, baseline: str = "vio",
+                          synthesize: bool = True, user=Depends(current_user)):
+    """功能B: 竞品能力普查差集 —— 竞品已上线、vio 清单缺失的能力 -> capability-gap 候选。
+
+    reviewer/PM 触发(gate_method 权限)。读 registry/capabilities/<rival>.json 与
+    vio.json 做差集,竞品 shipped 里 vio 缺的每条 -> capability-gap Finding
+    (subject=rival, rule=capability-census, task_id=census-<rival>)落库,并(默认)
+    自动提炼成方法初稿(draft, 待人/AI 复核)。竞品/基线未登记清单 -> 空(如实)。
+    """
+    try:
+        RBAC.require(user, "gate_method")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    from pipeline import capability_census as CEN
+    from pipeline import method_synth as MSYN
+    con = _con()
+    findings = CEN.census_to_findings(rival, baseline=baseline)
+    persisted = []
+    for fd in findings:
+        fid = store.upsert_finding(con, fd)
+        persisted.append({**fd, "id": fid})
+    created = []
+    if synthesize and persisted:
+        created = MSYN.synthesize_from_census(con, rival, persisted, baseline=baseline)
+    return {"rival": rival, "baseline": baseline,
+            "candidates": len(persisted),
+            "findings": persisted,
+            "created": [_method_view(m) for m in created], "count": len(created)}
+
+
+class CapabilityExtractIn(BaseModel):
+    product: str
+    docs_text: str
+    source: str = ""
+
+
+@app.post("/api/capability-extract")
+def extract_capabilities(body: CapabilityExtractIn, persist: bool = False,
+                         user=Depends(current_user)):
+    """功能B: LLM 从官网/docs 原文抽竞品能力条目(AI 复核闸: 一律落 candidate)。
+
+    reviewer/PM 触发。抽出的条目 status 强制为 candidate(留痕 LLM 原判于 tags),
+    差集不认 candidate 为候选 —— 必须经复核(review_capability)升 shipped 才进差集。
+    persist=true 时把抽取结果并入 registry/capabilities/<product>.json(与已有条目合并,
+    去重按能力文本);否则只返回抽取预览不落盘。
+    """
+    try:
+        RBAC.require(user, "gate_method")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    from pipeline import capability_census as CEN
+    from pipeline import capability_store as CS
+    extracted = CEN.extract_capabilities_via_llm(
+        body.product, body.docs_text, source=body.source)
+    saved_path = None
+    if persist and extracted.entries:
+        existing = CS.load_capabilities(body.product)
+        seen = {CEN._norm(e.capability) for e in existing.entries}
+        merged = list(existing.entries)
+        for e in extracted.entries:
+            if CEN._norm(e.capability) not in seen:
+                merged.append(e)
+                seen.add(CEN._norm(e.capability))
+        existing.entries = merged
+        saved_path = CS.save_capabilities(existing)
+    return {"product": body.product, "note": extracted.note,
+            "extracted": [e.as_dict() for e in extracted.entries],
+            "count": len(extracted.entries), "persisted": bool(saved_path)}
+
+
+class CapabilityResearchIn(BaseModel):
+    product: str
+    source_urls: list[str] = []          # 官网/新闻/社媒公开链接
+    persist: bool = True
+
+
+@app.post("/api/capability-research")
+def run_capability_research(body: CapabilityResearchIn, user=Depends(current_user)):
+    """D: 竞品自动调研 —— 贴官网/新闻/社媒链接 → 抓取 → LLM 抽能力 → 落 candidate。
+
+    reviewer/PM 触发(gate_method 权限)。抓公开页(失败如实标)→ 抽能力条目一律
+    candidate(AI 复核闸,带 source_url+fetched_at)→ persist 则并入
+    registry/capabilities/<product>.json(按能力文本去重)。差集不认 candidate,须经
+    /api/capabilities/{product}/review 复核升 shipped 才进候选。全部抓不到 → 如实标。
+    """
+    try:
+        RBAC.require(user, "gate_method")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    from pipeline import capability_census as CEN
+    res = CEN.auto_research(body.product, body.source_urls, persist=body.persist)
+    return {"product": body.product, "note": res.get("note"),
+            "fetched": [{"url": f["url"], "ok": f["ok"], "note": f.get("note", "")}
+                        for f in res.get("fetched", [])],
+            "extracted": res.get("extracted", []),
+            "count": len(res.get("extracted", [])),
+            "persisted": res.get("persisted", False)}
+
+
+class CapabilityReviewIn(BaseModel):
+    capability: str                      # 要复核的能力条目文本(定位用)
+    approve: bool                        # True=升 shipped, False=维持 candidate
+
+
+@app.post("/api/capabilities/{product}/review")
+def review_capability_entry(product: str, body: CapabilityReviewIn,
+                            user=Depends(current_user)):
+    """D: 复核一条 candidate 能力条目 —— approve=True 升 shipped 进差集。
+
+    reviewer/PM(gate_method)。只动 candidate 条目(shipped/limited/marketing 是数据源
+    事实不改)。升 shipped 后 diff_capabilities 才认它为候选新功能。留痕复核人。
+    """
+    try:
+        RBAC.require(user, "gate_method")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    from pipeline import capability_census as CEN
+    from pipeline import capability_store as CS
+    clist = CS.load_capabilities(product)
+    hit = None
+    for e in clist.entries:
+        if e.capability == body.capability:
+            hit = e
+            break
+    if hit is None:
+        raise HTTPException(404, f"能力条目未找到: {body.capability!r}")
+    CEN.review_capability(hit, approve=body.approve, reviewer=user.get("id", ""))
+    CS.save_capabilities(clist)
+    return {"product": product, "capability": hit.capability,
+            "status": hit.status, "approved": body.approve}
+
+
+@app.post("/api/capability-matrix/{domain}")
+def run_capability_matrix(domain: str, baseline: str = "vio",
+                          synthesize: bool = True, user=Depends(current_user)):
+    """C: 多竞品能力域对比矩阵 —— 按能力域横向普查,空白格 -> capability-gap 候选。
+
+    reviewer/PM 触发(gate_method 权限)。读该域全部题 × 参赛产品的分数聚成矩阵:
+    竞品做到、vio 没做到(且 vio 同域他题未证明具备)的格子 -> capability-gap Finding
+    (subject=竞品, rule=capability-matrix, task_id=matrix-<domain>-<指纹>)落库,并(默认)
+    自动提炼成结构化方法卡片 draft(待人/AI 复核)。返回矩阵 + 落库 Finding + 新建 draft。
+    """
+    try:
+        RBAC.require(user, "gate_method")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    from pipeline import capability_matrix as CM
+    from pipeline import method_synth as MSYN
+    con = _con()
+    scores = store.all_scores(con)
+    matrix = CM.build_matrix(scores, domain, baseline=baseline)
+    if not matrix.task_ids:
+        raise HTTPException(404, f"能力域 {domain!r} 下无题或无分数")
+    findings = CM.matrix_to_capability_gap_findings(matrix)
+    persisted = []
+    for fd in findings:
+        fid = store.upsert_finding(con, fd)
+        persisted.append({**fd, "id": fid})
+    created = []
+    if synthesize and persisted:
+        created = MSYN.synthesize_from_matrix(con, domain, persisted, baseline=baseline)
+    return {"domain": domain, "baseline": baseline,
+            "matrix": matrix.as_dict(),
+            "candidates": len(persisted), "findings": persisted,
+            "created": [_method_view(m) for m in created], "count": len(created)}
+
+
 @app.get("/api/methods")
 def list_methods(status: str | None = None, user=Depends(current_user)):
     """列出方法初稿 (可按 status 过滤)。任意已登录用户 (intern 起) 可看。"""
@@ -1040,6 +1269,8 @@ def approve_method(method_id: int, user=Depends(current_user)):
     """reviewer/PM 把关方法初稿 draft->approved (AC3 / story 35)。
 
     intern -> 403; 非 draft (已批/已导出) -> 409。
+    E: 若此前对该 method 跑过 AI 预复核, 把关(approve)即人拍板 -> 记一致率
+    (AI 建议 approve 且人也 approve -> agreed=True)。
     """
     try:
         m = METH.approve_method(_con(), reviewer=user, method_id=method_id)
@@ -1049,7 +1280,82 @@ def approve_method(method_id: int, user=Depends(current_user)):
         raise HTTPException(404, str(e))
     except METH.IllegalMethodState as e:
         raise HTTPException(409, str(e))
+    # E 一致率: 人 approve == AI 建议 approve? (有未决建议才记)
+    try:
+        sug = store.get_precheck_suggestion(_con(), "method", str(method_id))
+        if sug and sug.get("agreed") is None:
+            store.record_precheck_decision(
+                _con(), target_type="method", target_id=str(method_id),
+                human_decision="approve",
+                suggested_value=(sug.get("suggestion") or {}).get("suggestion"),
+                reviewer=user.get("id", ""))
+    except Exception:
+        logging.getLogger("competitor-eval").exception(
+            "记一致率失败 method_id=%s", method_id)
     return _method_view(m)
+
+
+class PrecheckOut(BaseModel):
+    pass
+
+
+@app.post("/api/findings/{finding_id}/precheck")
+def precheck_finding_endpoint(finding_id: int, user=Depends(current_user)):
+    """E: 对一条 finding 跑 AI 预复核 —— 给 final_category/product_judgment 建议 + 理由。
+
+    reviewer/PM(review 权限)。只给建议不落最终(人是最终闸);建议落 precheck_log
+    待人确认。返回 AI 建议供复核页展示。
+    """
+    try:
+        RBAC.require(user, "review")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    import json as _json
+    from pipeline import precheck as PC
+    con = _con()
+    finds = store.all_findings(con)
+    fd = next((f for f in finds if str(f.get("id")) == str(finding_id)), None)
+    if fd is None:
+        raise HTTPException(404, f"finding {finding_id} 不存在")
+    try:
+        fd["evidence"] = _json.loads(fd.get("evidence_json") or "null")
+    except Exception:
+        pass
+    sug = PC.precheck_finding(fd)
+    if not sug.get("dry_run"):
+        store.log_precheck_suggestion(con, target_type="finding",
+                                      target_id=str(finding_id), suggestion=sug)
+    return {"finding_id": finding_id, "suggestion": sug}
+
+
+@app.post("/api/methods/{method_id}/precheck")
+def precheck_method_endpoint(method_id: int, user=Depends(current_user)):
+    """E: 对一条 method draft 跑 AI 预复核 —— 给 approve/revise 建议 + 理由。"""
+    try:
+        RBAC.require(user, "gate_method")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    from pipeline import precheck as PC
+    con = _con()
+    m = next((x for x in METH.list_methods(con) if str(x.get("id")) == str(method_id)), None)
+    if m is None:
+        raise HTTPException(404, f"method {method_id} 不存在")
+    sug = PC.precheck_method(m)
+    if not sug.get("dry_run"):
+        store.log_precheck_suggestion(con, target_type="method",
+                                      target_id=str(method_id), suggestion=sug)
+    return {"method_id": method_id, "suggestion": sug}
+
+
+@app.get("/api/precheck/agreement")
+def precheck_agreement_endpoint(target_type: str | None = None,
+                                user=Depends(current_user)):
+    """E: AI 预复核建议 vs 人工最终结论的一致率(只统计已拍板记录)。"""
+    try:
+        RBAC.require(user, "review")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    return store.precheck_agreement(_con(), target_type=target_type)
 
 
 @app.get("/api/methods/{method_id}/preview")
