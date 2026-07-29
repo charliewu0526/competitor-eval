@@ -24,6 +24,7 @@ import json
 from dataclasses import dataclass, field, asdict
 
 from pipeline import findings as FIND
+from pipeline.domain_board import is_stale, DEFAULT_FRESHNESS_DAYS
 
 BASELINE = "vio"
 # 复用发现层「竞品显著领先」的门槛,保持大差距判定与发现规则同源、不另立标准。
@@ -124,8 +125,14 @@ def _mechanism_from_findings(product: str, task_findings: list[dict]) -> dict | 
 
 
 # --- 1. 分数差 -------------------------------------------------------------
-def build_score_diffs(task_scores: list[dict], baseline: str = BASELINE) -> list[ScoreDiff]:
-    """基线 vs 各竞品的分数差(算术). cannot-reach 标记但不参与作差(diff=None)."""
+def build_score_diffs(task_scores: list[dict], baseline: str = BASELINE, *,
+                      now: float | None = None,
+                      window_days: float = DEFAULT_FRESHNESS_DAYS) -> list[ScoreDiff]:
+    """基线 vs 各竞品的分数差(算术). cannot-reach 标记但不参与作差(diff=None).
+
+    stale 与分维度榜单同口径: 用 domain_board.is_stale 融合「存过的标志」与「按
+    tested_at 超新鲜度窗口(默认 90 天)自动派生」—— 否则超期数据在差距报告里会被
+    当成新鲜显示, 与榜单不一致(体检发现的自动 stale 未贯通)。"""
     base = next((s for s in task_scores if s.get("product") == baseline), None)
     base_val = _score_of(base) if base else None
 
@@ -156,7 +163,8 @@ def build_score_diffs(task_scores: list[dict], baseline: str = BASELINE) -> list
             honesty=sc.get("h1_honesty"),
             competitor_version=sc.get("competitor_version"),
             tested_at=sc.get("tested_at"),
-            stale=bool(sc.get("stale", False))))
+            stale=is_stale(sc.get("tested_at"), bool(sc.get("stale", False)),
+                           now=now, window_days=window_days)))
     # 基线排最前,其余按 diff 降序(领先最多的竞品先呈现),None 沉底。
     diffs.sort(key=lambda d: (not d.is_baseline,
                               -(d.diff if d.diff is not None else -1e9)))
@@ -165,18 +173,21 @@ def build_score_diffs(task_scores: list[dict], baseline: str = BASELINE) -> list
 
 # --- 2 + 3. 组装整份报告 ---------------------------------------------------
 def build_report(task_id: str, task_scores: list[dict], task_findings: list[dict],
-                 registry=None, baseline: str = BASELINE) -> GapReport:
+                 registry=None, baseline: str = BASELINE, *,
+                 now: float | None = None,
+                 window_days: float = DEFAULT_FRESHNESS_DAYS) -> GapReport:
     """组装一道对比任务的差距报告(纯派生,无副作用).
 
     task_scores   : 本题各产品的 score dict(store.all_scores 过滤 task_id,或内存)。
     task_findings : 本题机器发现 dict(findings.classify 产出 / store 读回)。
     registry      : F2 registry(取 is_open_source / repo 元数据);None 则机理块留空。
+    window_days   : stale 新鲜度窗口(默认 90 天), 与分维度榜单同口径。
     机器只标现象:findings 原样带出(含 PM-fillable 的 product_judgment/final_category),
     报告不代填、不下结论。
     """
     scores = [s for s in task_scores if s.get("task_id", task_id) == task_id]
     finds = [f for f in task_findings if f.get("task_id") == task_id]
-    score_diffs = build_score_diffs(scores, baseline)
+    score_diffs = build_score_diffs(scores, baseline, now=now, window_days=window_days)
 
     # 机理块:遍历本题出现过的**竞品**(非基线),读 registry 元数据 + 挖机理证据。
     mechanisms: list[CodeMechanism] = []
@@ -207,9 +218,14 @@ def build_report(task_id: str, task_scores: list[dict], task_findings: list[dict
                      mechanisms=mechanisms)
 
 
-def from_store(con, task_id: str, registry=None, baseline: str = BASELINE) -> GapReport:
-    """便捷:直接从 SQLite store 组装一道题的差距报告(读 scores + findings)."""
+def from_store(con, task_id: str, registry=None, baseline: str = BASELINE, *,
+               now: float | None = None,
+               window_days: float = DEFAULT_FRESHNESS_DAYS) -> GapReport:
+    """便捷:直接从 SQLite store 组装一道题的差距报告(读 scores + findings).
+
+    window_days: stale 新鲜度窗口, 与分维度榜单同口径(默认 90 天自动派生)。"""
     from pipeline import store as STORE
     scores = [s for s in STORE.all_scores(con) if s.get("task_id") == task_id]
     finds = [f for f in STORE.all_findings(con) if f.get("task_id") == task_id]
-    return build_report(task_id, scores, finds, registry=registry, baseline=baseline)
+    return build_report(task_id, scores, finds, registry=registry, baseline=baseline,
+                        now=now, window_days=window_days)

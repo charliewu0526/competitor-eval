@@ -2,7 +2,7 @@
 
 > 承接 grill(ADR 0012–0019)与 CONTEXT.md 词汇表。把单机评测引擎升级为多人协作的产品判断工场。
 > 唯一新核心接缝:**Submission → RunRecord** 翻译层;评分核心(RunRecord 进→分数/发现/排行榜出)一字不改复用。
-> 第一版 = 最薄闭环(ADR-0019),脱敏 / 方法闸 / 自动 stale 先人工代替。
+> 第一版 = 最薄闭环(ADR-0019)。原计划「脱敏 / 方法闸 / 自动 stale 先人工代替」三条债,实际交付时已随 MR 系列全部还清并自动化(脱敏=MR-9/10 送审前自动洗指纹+破盲守卫测试;方法闸=MR-14 draft→approved→exported 系统门禁;自动 stale=MR-12 按 tested_at 超窗自动派生标灰)。详见 ADR-0019 还账进度段。
 
 ## Problem Statement
 

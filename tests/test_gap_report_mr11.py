@@ -139,6 +139,29 @@ class ScoreDiffs(unittest.TestCase):
         self.assertEqual(sim.tested_at, 1234.0)
         self.assertTrue(sim.stale)
 
+    def test_stale_auto_derived_from_tested_at(self):
+        # 自动 stale 贯通: 差距报告与分维度榜单同口径 —— 超新鲜度窗口的分数即使库里
+        # stale=0 也应派生为陈旧(此前 gap_report 只读存储标志, 超期数据被当新鲜)。
+        now = 1_000_000_000.0
+        day = 86400.0
+        scores = [
+            _score("vio", sample=0.4, tested_at=now - 1 * day),      # 新鲜
+            _score("old", sample=0.7, tested_at=now - 200 * day),   # 超 90 天窗
+            _score("fresh", sample=0.6, tested_at=now - 10 * day),  # 窗内
+        ]
+        rep = GR.build_report("T1", scores, [], now=now, window_days=90)
+        by = {d.product: d for d in rep.score_diffs}
+        self.assertTrue(by["old"].stale, "超新鲜度窗的分数应自动派生 stale")
+        self.assertFalse(by["fresh"].stale, "窗内的分数不应被判陈旧")
+        self.assertFalse(by["vio"].stale)
+
+    def test_missing_tested_at_not_auto_stale(self):
+        # tested_at 缺失 => 不擅自判新鲜也不伪装陈旧, 只沿用存储标志(如实沿用已知信息)。
+        scores = [_score("vio", sample=0.4),
+                  _score("a", sample=0.7)]  # 无 tested_at
+        rep = GR.build_report("T1", scores, [], now=1e9, window_days=90)
+        self.assertFalse(next(d for d in rep.score_diffs if d.product == "a").stale)
+
 
 class FindingsPassthrough(unittest.TestCase):
     def test_big_gap_finding_surfaced(self):
