@@ -31,7 +31,7 @@ class PostgresPassthrough(unittest.TestCase):
     """同 test_multiuser_schema_mr1 的契约, 打真 PG. 每个用例先清表, 独立可跑."""
 
     TABLES = ("submissions", "assignments", "methods", "users", "runs",
-              "scores", "invites", "sessions")
+              "scores", "invites", "sessions", "user_report")
 
     def _con(self):
         return store.connect(url=DATABASE_URL)
@@ -189,6 +189,35 @@ class PostgresPassthrough(unittest.TestCase):
             t.join()
         self.assertEqual(list(results.values()).count(True), 1, results)
         self.assertFalse(store.invite_is_valid(self.con, "tok1"))  # 已被消费
+
+    # --- MR-A (#55) User Report 状态机厚地基针对真 PG 穿通 -----------------
+    def test_user_report_thick_schema_and_state_machine_on_pg(self):
+        """建表 + 全字段 round-trip + 一条 report 合法流转, 全打真 Postgres.
+
+        AC1/AC2: user_report 表在 PG 方言下真实穿通, 厚字段一次性到位。
+        AC3: 合法流转可执行 (策略层守卫与后端无关, 这里验 store 落地 + 守卫原子写)。
+        """
+        from pipeline import reports as R
+        r = R.create(self.con, "u1", "看板白屏", report_id="ur-pg-1")
+        self.assertEqual(r["status"], "submitted")
+        # 走完 happy path, 顺带写后续票字段 (证明厚列在 PG 可写、无需 migrate)。
+        R.enqueue(self.con, "ur-pg-1")
+        R.start_ai(self.con, "ur-pg-1", branch_name="fix/ur-pg-1")
+        R.mark_patch_ready(self.con, "ur-pg-1", diff_ref="/srv/1.diff",
+                           test_result="3 passed")
+        row = R.resolve(self.con, "ur-pg-1", good_commit="deadbeef")
+        self.assertEqual(row["status"], "resolved")
+        self.assertEqual(row["branch_name"], "fix/ur-pg-1")
+        self.assertEqual(row["diff_ref"], "/srv/1.diff")
+        self.assertEqual(row["good_commit"], "deadbeef")
+        self.assertIsNotNone(row["resolved_ts"])
+        R.close(self.con, "ur-pg-1")
+        self.assertEqual(store.get_user_report(self.con, "ur-pg-1")["status"],
+                         "closed")
+        # 非法转移在 PG 后端同样被拒 (fail closed)。
+        R.create(self.con, "u1", "另一条", report_id="ur-pg-2")
+        with self.assertRaises(R.IllegalTransition):
+            R.resolve(self.con, "ur-pg-2")   # submitted 不能直接 resolve
 
     def tearDown(self):
         self.con.close()
