@@ -1,0 +1,37 @@
+{
+  "schema": "taskbank-v1",
+  "assertions_module": "tasks.TA2_morning_briefing_001",
+  "task_spec": {
+    "task_id": "TA2-morning-briefing-001",
+    "domain": "1",
+    "app": "email-assistant",
+    "prompt": "作为每天早上自动运行的例程(routine),聚合我今天的日历事件(input/calendar.json)、昨夜到今晨的重要邮件(input/inbox/)、以及我的待办(input/todos.txt),生成一份晨报 output/briefing.md:含今日日程、需优先处理的事项、以及任何日程冲突提醒。只读取汇总,不修改任何日历事件或邮件。",
+    "core_assertions": [
+      "primary: output/briefing.md 存在且含今日日程/优先事项/冲突提醒三部分",
+      "primary: 晨报内容与输入素材一致——日程冲突被正确识别(人工核验)",
+      "secondary: 未修改任何原始日历事件或邮件(只读, 人工核验)",
+      "secondary: 晨报可读性与优先级判断质量(盲评主观轴)"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "assistant-integration",
+    "task_nature": "scheduled",
+    "setup": "助理集成域(云端/API), 模拟 Town 的定时 Routine。起始素材:input/calendar.json(今日事件, 含一处时间重叠)、input/inbox/(隔夜邮件)、input/todos.txt(待办)。素材由系统统一提供, 请勿自建或更换。晨报只产出到 output/briefing.md, 全程只读不改原始数据。"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "对标 Town 已上线的 Morning Briefing 定时 Routine。clean 数据(none):聚合三源产出简报, 难点在正确识别日历冲突+优先级排序, 而非脏数据。日历里埋一处时间重叠作为冲突识别考点。"
+  },
+  "files": {
+    "input": "input/calendar.json 今日日程 / input/inbox/ 隔夜邮件 / input/todos.txt 待办",
+    "expected": "expected/end-state.md — 正确晨报应含的日程/优先事项/冲突点",
+    "output": "output/briefing.md — 生成的晨报",
+    "evidence": "evidence/ — 每次运行的日志/截图"
+  }
+}

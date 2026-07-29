@@ -1,0 +1,19 @@
+{
+  "product": "town",
+  "run_idx": 1,
+  "gate": "api-or-integration",
+  "artifact_path": "/Users/charlie/.violoop/workspace/competitor-eval/tasks/TA2-morning-briefing-001/output/briefing.md",
+  "briefing_correct": true,
+  "readonly_ok": true,
+  "transcript_excerpt": "Townie Morning Briefing routine 聚合日历+隔夜邮件+待办, 正确识别 09:00/09:30 时间冲突, 只读未改原始数据。",
+  "artifact_summary": "Townie 经 API 集成产出 briefing.md(等价工件)。",
+  "screenshots_note": "(pilot 无截图)",
+  "evidence_source": "log",
+  "env_meta": {
+    "operator": "Town (Townie, cloud)",
+    "surface": "@town.com email + web",
+    "date": "2026-07-29",
+    "note": "跨层轨: 靠API集成干活, 非本地GUI操控"
+  },
+  "claimed_success": true
+}

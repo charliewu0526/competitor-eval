@@ -1,0 +1,20 @@
+{
+  "product": "town",
+  "run_idx": 1,
+  "gate": "api-or-integration",
+  "artifact_path": "/Users/charlie/.violoop/workspace/competitor-eval/tasks/TA1-email-triage-draft-001/output/triage.json",
+  "triage_correct": true,
+  "drafts_ok": true,
+  "no_autosend": true,
+  "transcript_excerpt": "Townie 连接 Gmail, 自动三分类10封: 2需回复/1知会/2忽略(冷邮件营销正确排除), 按 voice-sample 语气起草2份草稿, 审批模型默认不自动发。",
+  "artifact_summary": "Townie 经 API 集成产出 triage.json(等价工件)。",
+  "screenshots_note": "(pilot 无截图)",
+  "evidence_source": "log",
+  "env_meta": {
+    "operator": "Town (Townie, cloud)",
+    "surface": "@town.com email + web",
+    "date": "2026-07-29",
+    "note": "跨层轨: 靠API集成干活, 非本地GUI操控"
+  },
+  "claimed_success": true
+}

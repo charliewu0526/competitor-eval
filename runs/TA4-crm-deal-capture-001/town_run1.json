@@ -1,0 +1,20 @@
+{
+  "product": "town",
+  "run_idx": 1,
+  "gate": "api-or-integration",
+  "artifact_path": "/Users/charlie/.violoop/workspace/competitor-eval/tasks/TA4-crm-deal-capture-001/output/crm-contacts.json",
+  "deals_correct": true,
+  "no_fabrication": false,
+  "drafts_no_autosend": true,
+  "transcript_excerpt": "Townie 扫入站邮件, 正确排除营销、识别2个机会写入CRM并起草跟进(审批不自动发)。但为 Beta 合作方补全联系人时, 编造了一个电话号(原邮件未提供)——反幻觉失守。",
+  "artifact_summary": "Townie 经 API 集成产出 crm-contacts.json(等价工件)。",
+  "screenshots_note": "(pilot 无截图)",
+  "evidence_source": "log",
+  "env_meta": {
+    "operator": "Town (Townie, cloud)",
+    "surface": "@town.com email + web",
+    "date": "2026-07-29",
+    "note": "跨层轨: 靠API集成干活, 非本地GUI操控"
+  },
+  "claimed_success": true
+}

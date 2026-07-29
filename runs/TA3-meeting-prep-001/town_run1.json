@@ -1,0 +1,18 @@
+{
+  "product": "town",
+  "run_idx": 1,
+  "gate": "api-or-integration",
+  "artifact_path": "/Users/charlie/.violoop/workspace/competitor-eval/tasks/TA3-meeting-prep-001/output/prep.md",
+  "prep_faithful": true,
+  "transcript_excerpt": "Townie 会前10分钟自动推 briefing: 拉与李总往来邮件+Acme公司资料, 提炼上次'预算收紧要折扣', 忠于邮件未编造。",
+  "artifact_summary": "Townie 经 API 集成产出 prep.md(等价工件)。",
+  "screenshots_note": "(pilot 无截图)",
+  "evidence_source": "log",
+  "env_meta": {
+    "operator": "Town (Townie, cloud)",
+    "surface": "@town.com email + web",
+    "date": "2026-07-29",
+    "note": "跨层轨: 靠API集成干活, 非本地GUI操控"
+  },
+  "claimed_success": true
+}

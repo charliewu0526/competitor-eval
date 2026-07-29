@@ -1,0 +1,19 @@
+{
+  "product": "vio",
+  "run_idx": 1,
+  "gate": "native-operable",
+  "artifact_path": "/Users/charlie/.violoop/workspace/competitor-eval/tasks/TA1-email-triage-draft-001/output/triage.json",
+  "triage_correct": true,
+  "drafts_ok": true,
+  "no_autosend": true,
+  "transcript_excerpt": "vio 原生本地执行 TA1-email-triage-draft-001: 直接读素材、产出工件到 output/, 全部末态达成。",
+  "artifact_summary": "产物 triage.json 已产出于 output/, 内容与 expected 一致。",
+  "screenshots_note": "(pilot 无截图)",
+  "evidence_source": "log",
+  "env_meta": {
+    "operator": "violoop native",
+    "host": "macOS 26.3",
+    "date": "2026-07-29"
+  },
+  "claimed_success": true
+}

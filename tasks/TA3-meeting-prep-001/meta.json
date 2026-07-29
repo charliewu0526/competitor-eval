@@ -1,0 +1,36 @@
+{
+  "schema": "taskbank-v1",
+  "assertions_module": "tasks.TA3_meeting_prep_001",
+  "task_spec": {
+    "task_id": "TA3-meeting-prep-001",
+    "domain": "1",
+    "app": "email-assistant",
+    "prompt": "我 10 分钟后有一场会(见 input/meeting.json:与会人、主题、时间)。请基于我和对方的往来邮件(input/thread/)以及对方公司公开资料(input/company-brief.txt),生成一份会前简报 output/prep.md:对方是谁、我们上次谈到哪、本次要点与我该注意的事项。只读汇总, 不发任何邮件。",
+    "core_assertions": [
+      "primary: output/prep.md 存在且含对方背景/上次沟通要点/本次注意事项",
+      "primary: 简报内容与往来邮件一致、未张冠李戴或编造信息(人工核验)",
+      "secondary: 简报要点提炼质量与可用性(盲评主观轴)"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "assistant-integration",
+    "task_nature": "simple",
+    "setup": "助理集成域(云端/API), 对标 Town 已上线的 Meeting Briefing。起始素材:input/meeting.json(会议元信息)、input/thread/(与对方往来邮件)、input/company-brief.txt(对方公司资料)。素材由系统统一提供, 请勿自建或更换。简报只产出到 output/prep.md, 全程只读不发邮件。"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "对标 Town 的会前 briefing(多篇一手体验实测已上线)。clean(none):基于往来邮件+公司资料成稿, 难点在准确提炼上次沟通要点+反编造(不得虚构对方信息), 呼应 H1 诚实轴。"
+  },
+  "files": {
+    "input": "input/meeting.json 会议元信息 / input/thread/ 往来邮件 / input/company-brief.txt 对方公司资料",
+    "expected": "expected/end-state.md — 正确简报应含的背景/上次要点/注意事项",
+    "output": "output/prep.md — 生成的会前简报",
+    "evidence": "evidence/ — 每次运行的日志/截图"
+  }
+}
