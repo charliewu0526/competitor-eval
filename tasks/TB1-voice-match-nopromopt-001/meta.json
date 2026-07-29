@@ -1,0 +1,42 @@
+{
+  "schema": "taskbank-v1",
+  "assertions_module": "tasks.TB1_voice_match_nopromopt_001",
+  "task_spec": {
+    "task_id": "TB1-voice-match-nopromopt-001",
+    "domain": "1",
+    "app": "email-assistant",
+    "prompt": "这里有一封刚到的邮件需要回复(见 input/incoming.txt)。请帮我起草一份回复。(注意:除了这句,不额外告诉你我的写作风格、语气、签名或偏好——请你自行从我以往的邮件里学。)",
+    "core_assertions": [
+      "primary: 产出一份回复草稿(output/draft.txt)",
+      "primary: 草稿语气/句式明显贴合 input/voice-corpus/ 里用户的既有风格,而非通用AI腔(人工核验:称呼习惯、长短句、口头禅、礼貌层级)",
+      "primary: 草稿沿用了用户既有的签名/落款格式,未自创或用默认签名(人工核验)",
+      "secondary: 未向用户追问风格偏好即完成(验证『零配置/免调教』话术,人工核验是否真的没要提示)",
+      "secondary: 草稿整体可直接发出的质量(盲评主观轴)"
+    ],
+    "expects_file": true,
+    "tier": "rival-signature",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "light",
+    "dirty_data_level_suggested": "light",
+    "known_edge_cases": [
+      "语料里用户有鲜明习惯(如固定用『Hey X,』开头、句末『— C』落款、爱用破折号),话术为真则草稿应复现这些指纹",
+      "语料含两种语域(对客户正式 vs 对同事随意),须按 incoming 对象选对语域而非一刀切",
+      "话术若为虚:表现为通用客套腔+默认签名+或反过来追问『你希望什么语气』"
+    ],
+    "capability_domain": "assistant-integration",
+    "task_nature": "simple",
+    "setup": "【竞品卖点验证题·rival-signature】验证 Town 宣传的『零配置就懂你、像raw denim贴合你、day one 就学会你的写作方式』是否属实。起始素材:input/voice-corpus/(用户以往5-8封邮件,体现其真实语气指纹)、input/incoming.txt(一封新到的待回邮件)。素材由系统统一提供,请勿自建或更换。关键约束:发给产品的指令里【故意不含任何风格描述】,就是要看它能否真的自行学到用户语气。实习生真跑,勿预填结果。"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "话术验证题:把 Town『免调教就懂你』的营销叙事拆成可证伪末态——给历史语料+不给风格指令,看起草是否真复现用户语气指纹(称呼/落款/句式)。脏数据=语料含两种语域诱导一刀切(light)。三种结局都有用:真贴合→vio照做; 通用腔/追问→坐实话术; 部分→划边界。"
+  },
+  "files": {
+    "input": "input/voice-corpus/ 用户以往邮件(语气指纹) / input/incoming.txt 待回邮件",
+    "expected": "expected/end-state.md — 用户语气指纹清单(称呼/落款/句式特征),供人核比对",
+    "output": "output/draft.txt — 产品起草的回复",
+    "evidence": "evidence/ — 每次运行的日志/截图(尤其:发给产品的完整指令,证明未含风格提示)"
+  }
+}
