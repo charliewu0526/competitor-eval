@@ -14,6 +14,7 @@ import Login from "./pages/Login.jsx";
 
 import Dashboard from "./pages/Dashboard.jsx";
 import TaskCatalog from "./pages/TaskCatalog.jsx";
+import EvalDetail from "./pages/EvalDetail.jsx";
 import Leaderboard from "./pages/Leaderboard.jsx";
 import DomainBoard from "./pages/DomainBoard.jsx";
 import Matrix from "./pages/Matrix.jsx";
@@ -39,33 +40,47 @@ export function roleRank(role) { return ROLE_RANK[role] ?? -1; }
 
 // 导航单一真相源:每项带 minRole —— 菜单过滤 + 路由守卫共用这一份,
 // 保证「藏了菜单」和「敲 URL 也进不去」永远一致(否则藏菜单等于没藏)。
-// 分档(charlie 拍板):
-//   intern 实习生(6): 总览/任务清单/我的任务/方法沉淀/差距报告/排行榜 —— 只留他的活 + 看结果。
-//   reviewer 审核员(+7): 分维度/按题矩阵/评分详情/成本/发现看板/能力专项/抽查队列 —— 复核分析。
-//   owner PM(+1): 黄金集授权 —— 校准类危险开关独占。
+// 分档(charlie 拍板, 2026-07-29 导航收拢):
+//   intern 实习生(6): 总览/任务清单/我的任务/差距归因/方法沉淀/使用说明/意见反馈 —— 只留他的活 + 看结果。
+//   reviewer 审核员(+2): 评测明细(原 5 个分数切片合 1)/抽查队列 —— 复核分析。
+//   owner PM(+3): 黄金集授权/用户管理/反馈台 —— 治理独占。
+// 收拢要点:
+//   * 「评测明细」把 排行榜/分维度/按题矩阵/评分详情/成本 5 个同源分数看法合成 1 页(内部 Tab)。
+//   * 「差距归因」= 原差距报告 + 发现 + 归因 + 自动提炼功能点; 发现看板/能力专项不再占顶级导航
+//     (发现数据已在差距归因页汇总; /findings /probes 等路由保留可直达, 不白屏)。
 const NAV = [
   { key: "/", icon: <DashboardOutlined />, label: "总览", minRole: "intern" },
   { key: "/catalog", icon: <UnorderedListOutlined />, label: "任务清单", minRole: "intern" },
   { key: "/assignments", icon: <SolutionOutlined />, label: "我的任务", minRole: "intern" },
+  { key: "/gap-report", icon: <DiffOutlined />, label: "差距归因", minRole: "intern" },
   { key: "/methods", icon: <DeploymentUnitOutlined />, label: "方法沉淀", minRole: "intern" },
-  { key: "/gap-report", icon: <DiffOutlined />, label: "差距报告", minRole: "intern" },
-  { key: "/leaderboard", icon: <TrophyOutlined />, label: "排行榜", minRole: "intern" },
   { key: "/help", icon: <QuestionCircleOutlined />, label: "使用说明", minRole: "intern" },
   { key: "/feedback", icon: <MessageOutlined />, label: "意见反馈", minRole: "intern" },
-  { key: "/domain-board", icon: <AppstoreOutlined />, label: "分维度榜单", minRole: "reviewer" },
-  { key: "/matrix", icon: <TableOutlined />, label: "按题矩阵", minRole: "reviewer" },
-  { key: "/score", icon: <RadarChartOutlined />, label: "评分详情", minRole: "reviewer" },
-  { key: "/cost", icon: <DollarOutlined />, label: "成本面板", minRole: "reviewer" },
-  { key: "/findings", icon: <BulbOutlined />, label: "发现看板", minRole: "reviewer" },
-  { key: "/probes", icon: <ExperimentOutlined />, label: "能力专项", minRole: "reviewer" },
+  { key: "/eval-detail", icon: <TableOutlined />, label: "评测明细", minRole: "reviewer" },
   { key: "/spotcheck", icon: <SafetyCertificateOutlined />, label: "抽查队列", minRole: "reviewer" },
   { key: "/authorizations", icon: <AuditOutlined />, label: "黄金集授权", minRole: "owner" },
   { key: "/users", icon: <TeamOutlined />, label: "用户管理", minRole: "owner" },
   { key: "/report-console", icon: <InboxOutlined />, label: "反馈台", minRole: "owner" },
 ];
 
-// 路由 path -> 该页要求的 minRole(路由守卫用)。与 NAV 同源。
-const ROUTE_MIN_ROLE = Object.fromEntries(NAV.map((n) => [n.key, n.minRole]));
+// 路由保留但不进顶级导航的页(经 评测明细 Tab / 差距归因页 / 直达 URL 访问)。
+// 与 NAV 同源合并进 ROUTE_MIN_ROLE, 保证路由守卫仍生效(藏了菜单≠不设防)。
+const EXTRA_ROUTE_ROLE = {
+  "/eval-detail": "reviewer",   // 冗余兜底(NAV 已含), 保守写入
+  "/leaderboard": "reviewer",
+  "/domain-board": "reviewer",
+  "/matrix": "reviewer",
+  "/score": "reviewer",
+  "/cost": "reviewer",
+  "/findings": "reviewer",
+  "/probes": "reviewer",
+};
+
+// 路由 path -> 该页要求的 minRole(路由守卫用)。NAV + 保留路由 同源。
+const ROUTE_MIN_ROLE = {
+  ...Object.fromEntries(NAV.map((n) => [n.key, n.minRole])),
+  ...EXTRA_ROUTE_ROLE,
+};
 
 const ROLE_LABEL = {
   intern: { text: "实习生", color: "blue" },
@@ -155,6 +170,7 @@ export default function App() {
               <Route path="/catalog" element={<Guard path="/catalog"><TaskCatalog /></Guard>} />
               <Route path="/assignments" element={<Guard path="/assignments"><Assignments /></Guard>} />
               <Route path="/methods" element={<Guard path="/methods"><Methods /></Guard>} />
+              <Route path="/eval-detail" element={<Guard path="/eval-detail"><EvalDetail /></Guard>} />
               <Route path="/leaderboard" element={<Guard path="/leaderboard"><Leaderboard /></Guard>} />
               <Route path="/domain-board" element={<Guard path="/domain-board"><DomainBoard /></Guard>} />
               <Route path="/matrix" element={<Guard path="/matrix"><Matrix /></Guard>} />

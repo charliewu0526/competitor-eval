@@ -977,6 +977,35 @@ def _method_view(m: dict) -> dict:
     }
 
 
+@app.post("/api/gap-report/{task_id}/synthesize-methods")
+def synthesize_methods(task_id: str, baseline: str = "vio",
+                       user=Depends(current_user)):
+    """自动闭环: 跑归因 -> 提炼一句话功能点 -> 自动落成方法初稿(draft)。
+
+    reviewer/PM 触发(gate_method 权限, 与把关同级 —— 自动提炼进方法沉淀属复核链
+    前段, 不给 intern 免审自灌)。产出的 draft status=draft, author=system:auto,
+    仍需人在方法沉淀审核 approved。返回本次新建的 method 列表(可能为空:归因无
+    有效引用/竞品不占优时不硬造)。
+    """
+    try:
+        RBAC.require(user, "gate_method")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    con = _con()
+    scores = store.all_scores(con)
+    if not any(s.get("task_id") == task_id for s in scores):
+        raise HTTPException(404, "no scores for this task")
+    finds = store.all_findings(con)
+    # 跑带归因的报告 -> 拿 attribution -> 提炼落 draft。
+    rep = GAP.build_report(task_id, scores, finds,
+                           registry=REG.default_registry(), baseline=baseline,
+                           with_attribution=True)
+    from pipeline import method_synth as MSYN
+    created = MSYN.synthesize_from_attribution(con, task_id, rep.as_dict().get("attribution"))
+    return {"task_id": task_id, "created": [_method_view(m) for m in created],
+            "count": len(created)}
+
+
 @app.get("/api/methods")
 def list_methods(status: str | None = None, user=Depends(current_user)):
     """列出方法初稿 (可按 status 过滤)。任意已登录用户 (intern 起) 可看。"""

@@ -5,7 +5,7 @@ import {
 } from "antd";
 import {
   RiseOutlined, FallOutlined, GithubOutlined, WarningOutlined,
-  BulbOutlined, FileSearchOutlined,
+  BulbOutlined, FileSearchOutlined, ThunderboltOutlined,
 } from "@ant-design/icons";
 import { Link } from "react-router-dom";
 import { getGapReportTasks, getGapReport } from "../api";
@@ -136,7 +136,7 @@ const CAT_META = {
   "execution-detail": { color: "blue", text: "执行细节更到位" },
 };
 
-function AttributionBlock({ attribution, onRun, running }) {
+function AttributionBlock({ attribution, onRun, running, onSynth, synthing, synthResult }) {
   // 未触发:给一个按钮,按需调 Claude 最强模型(较慢)。
   if (!attribution) {
     return (
@@ -217,6 +217,25 @@ function AttributionBlock({ attribution, onRun, running }) {
           </Card>
         );
       })}
+
+      <Divider style={{ margin: "8px 0" }} />
+      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+        <span style={{ fontSize: 12, color: "#8c8c8c" }}>
+          把上面的归因自动提炼成研发能照做的<b>一句话功能点</b>,落成方法初稿送
+          <Link to="/methods"> 方法沉淀 </Link>等人审核(仍需 reviewer/PM 把关才导出研发)。
+        </span>
+        <Space wrap>
+          <Button icon={<ThunderboltOutlined />} loading={synthing}
+            onClick={onSynth} type="primary" ghost>
+            生成功能点 → 送方法沉淀
+          </Button>
+          {synthResult != null && (
+            synthResult.count > 0
+              ? <Tag color="green">已生成 {synthResult.count} 条初稿,去方法沉淀审核</Tag>
+              : <Tag color="default">没有可提炼的新功能点(已存在或无引用支撑)</Tag>
+          )}
+        </Space>
+      </Space>
     </Space>
   );
 }
@@ -230,6 +249,8 @@ export default function GapReport() {
   const [loadingRep, setLoadingRep] = useState(false);
   const [attribution, setAttribution] = useState(null);
   const [runningAttr, setRunningAttr] = useState(false);
+  const [synthing, setSynthing] = useState(false);
+  const [synthResult, setSynthResult] = useState(null);
 
   // 按需触发归因(较慢,单独调带 attribution=true 的接口),结果并入当前报告。
   function runAttribution() {
@@ -241,6 +262,17 @@ export default function GapReport() {
       .catch((e) => setAttribution({ dry_run: true,
         note: e.userMessage || String(e) }))
       .finally(() => setRunningAttr(false));
+  }
+
+  // 自动闭环:把归因提炼成一句话功能点,落成方法初稿送方法沉淀等人审核。
+  function runSynthesize() {
+    if (!taskId) return;
+    setSynthing(true);
+    setSynthResult(null);
+    synthesizeMethods(taskId)
+      .then((d) => setSynthResult({ count: d.count || 0 }))
+      .catch((e) => { setSynthResult({ count: 0, error: e.userMessage || String(e) }); })
+      .finally(() => setSynthing(false));
   }
 
   useEffect(() => {
@@ -343,7 +375,9 @@ export default function GapReport() {
                 style={{ marginBottom: 16 }}
               >
                 <AttributionBlock attribution={attribution}
-                  onRun={runAttribution} running={runningAttr} />
+                  onRun={runAttribution} running={runningAttr}
+                  onSynth={runSynthesize} synthing={synthing}
+                  synthResult={synthResult} />
               </Card>
 
               <Card title={<span>源码机理 · 开源竞品 <InfoTip title="开源竞品从源码分析出的实现机理(带 repo);闭源拿不到源码,如实标 unavailable,绝不编造。" /></span>}>

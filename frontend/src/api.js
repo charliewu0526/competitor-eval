@@ -75,6 +75,11 @@ export const getGapReport = (taskId, baseline = "vio", attribution = false) =>
     { params: { baseline, attribution },
       timeout: attribution ? 120000 : 15000 })
     .then((r) => r.data);
+// 自动闭环: 跑归因 -> 提炼一句话功能点 -> 自动落 draft 进方法沉淀。慢调用放宽超时。
+export const synthesizeMethods = (taskId, baseline = "vio") =>
+  api.post(`/gap-report/${encodeURIComponent(taskId)}/synthesize-methods`,
+    null, { params: { baseline }, timeout: 180000 })
+    .then((r) => r.data);
 
 export const postJudgment = (id, body) =>
   api.post(`/findings/${id}/judgment`, body).then((r) => r.data);
