@@ -17,3 +17,19 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+
+# 误建的字面量目录(临时 db 路径被当成目录创建)
+sqlite:/
+
+# 本次一次性/联调用临时脚本与产物(非核心代码,不入库)
+outputs/agenda/e2e_pm_server.py
+outputs/agenda/materialize_tb.py
+outputs/agenda/migrate_sqlite_to_pg.py
+outputs/agenda/pg_backend_launcher.py
+outputs/agenda/t3_real_run.py
+outputs/agenda/t3run/
+outputs/agenda/verify_intern_flow.py
+outputs/agenda/mr_b_pr_body.md
+runs/walkthrough/
+
+outputs/agenda/health_step3.py
