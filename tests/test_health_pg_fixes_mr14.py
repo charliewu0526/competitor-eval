@@ -265,5 +265,47 @@ class HealthDegradesTo503(unittest.TestCase):
             APP._migrated_for = None
 
 
+# --- H-1: 连接按线程复用而非每请求新建从不 close --------------------------
+class ConnectionReuse(unittest.TestCase):
+    def test_con_reused_within_thread(self):
+        """H-1: 同线程内多次 _con() 返回同一连接对象(复用, 不无界新建泄漏)。
+
+        修复前每次 store.connect() 新建且从不 close -> SQLite fd 堆积 / PG 打满
+        max_connections。修复后按「线程+库路径」缓存复用, 连接数收敛到线程池大小。
+        """
+        import server.app as APP
+        orig = APP._DB_PATH
+        APP._DB_PATH = str(pathlib.Path(tempfile.mkdtemp()) / "reuse.db")
+        APP._migrated_for = None
+        APP._drop_cached_con()
+        try:
+            c1 = APP._con()
+            c2 = APP._con()
+            self.assertIs(c1, c2, "同线程 _con() 应复用同一连接对象 (H-1)")
+        finally:
+            APP._drop_cached_con()
+            APP._DB_PATH = orig
+            APP._migrated_for = None
+
+    def test_db_path_switch_rebuilds_con(self):
+        """库路径切换(如测试切临时库)时应弃旧连、重建 —— 不能复用错库的连接。"""
+        import server.app as APP
+        orig = APP._DB_PATH
+        APP._migrated_for = None
+        APP._drop_cached_con()
+        try:
+            APP._DB_PATH = str(pathlib.Path(tempfile.mkdtemp()) / "a.db")
+            APP._migrated_for = None
+            ca = APP._con()
+            APP._DB_PATH = str(pathlib.Path(tempfile.mkdtemp()) / "b.db")
+            APP._migrated_for = None
+            cb = APP._con()
+            self.assertIsNot(ca, cb, "换库后应重建连接, 不复用旧库连接")
+        finally:
+            APP._drop_cached_con()
+            APP._DB_PATH = orig
+            APP._migrated_for = None
+
+
 if __name__ == "__main__":
     unittest.main()

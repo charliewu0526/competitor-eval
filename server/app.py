@@ -10,6 +10,7 @@ Run:  uvicorn server.app:app --port 8600   (from repo root)
 from __future__ import annotations
 
 import json
+import threading
 from typing import Literal
 
 from fastapi import (FastAPI, HTTPException, Header, Depends, UploadFile, File,
@@ -56,17 +57,44 @@ _DB_PATH = None  # default board/competitor_eval.db
 
 
 _migrated_for = None   # 记录已完成建表+迁移的 _DB_PATH(进程内一次)
+_conn_local = threading.local()   # 每线程缓存一个连接(H-1)
 
 
 def _con():
-    # H-3: 建表+迁移是一次性动作。首个请求(或 _DB_PATH 变更, 如测试切临时库)迁移一次,
-    # 之后每请求 skip_migrate=True 只开连接, 免得每个请求都重跑 executescript +
-    # 11 张表 PRAGMA + SCHEMA 正则解析的风暴。不依赖 lifespan(TestClient 直连不触发)。
+    # H-1(连接生命周期): 此前每请求 store.connect() 新建连接且从不 close ——
+    # SQLite 靠 GC 兜底(文件描述符堆积), PG 每请求 2+ 条物理连接永不归还, 并发上升
+    # 迅速打满 max_connections -> 503 全挂。改为按「线程 + 库路径」缓存连接并复用:
+    # uvicorn 默认线程池(~40 worker)下连接数收敛到 worker 数这个上界, 不再无界泄漏。
+    # 零调用点改动 —— 40 个端点仍照常 `con = _con()`。SQLite 连接非线程安全, 按线程
+    # 各持一个正好安全; 库路径变更(测试切临时库)时丢弃旧连、重建。
+    #
+    # H-3(迁移一次): 建表+迁移是一次性动作, 首次见到某库路径时迁移一次, 之后
+    # skip_migrate=True 只复用连接, 免得每请求重跑 executescript + PRAGMA 风暴。
     global _migrated_for
     if _migrated_for != _DB_PATH:
         store.connect(_DB_PATH).close()   # 完整建表+迁移
         _migrated_for = _DB_PATH
-    return store.connect(_DB_PATH, skip_migrate=True)
+        _drop_cached_con()                # 库路径变了, 弃掉线程里的旧连接
+
+    cached = getattr(_conn_local, "con", None)
+    if cached is not None and getattr(_conn_local, "path", None) == _DB_PATH:
+        return cached
+    con = store.connect(_DB_PATH, skip_migrate=True)
+    _conn_local.con = con
+    _conn_local.path = _DB_PATH
+    return con
+
+
+def _drop_cached_con():
+    """丢弃当前线程缓存的连接(库路径切换时用, 主要服务测试切临时库)。"""
+    con = getattr(_conn_local, "con", None)
+    if con is not None:
+        try:
+            con.close()
+        except Exception:
+            pass
+    _conn_local.con = None
+    _conn_local.path = None
 
 
 @app.get("/api/health")
