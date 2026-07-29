@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Typography, Row, Col, Card, Statistic, Spin, Alert, Tag } from "antd";
+import { Typography, Row, Col, Card, Statistic, Spin, Alert, Tag, Tooltip } from "antd";
 import {
   AppstoreOutlined, FileTextOutlined, BulbOutlined, SafetyCertificateOutlined,
 } from "@ant-design/icons";
@@ -36,7 +36,7 @@ export default function Dashboard() {
         </Col>
         <Col span={6}>
           <Card hoverable onClick={() => nav("/matrix")}>
-            <Statistic title={<span><FileTextOutlined /> 评测任务</span>} value={ov.tasks} suffix="道" />
+            <Statistic title={<Tooltip title="已有评分入库的题数(≠ 任务清单里可领取的题库总数)"><span><FileTextOutlined /> 已评测任务</span></Tooltip>} value={ov.tasks} suffix="道" />
           </Card>
         </Col>
         <Col span={6}>

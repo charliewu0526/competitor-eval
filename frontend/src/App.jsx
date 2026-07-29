@@ -7,6 +7,7 @@ import {
   AuditOutlined, UnorderedListOutlined, AppstoreOutlined, DiffOutlined,
   UserOutlined, LogoutOutlined, SolutionOutlined, DeploymentUnitOutlined,
   TeamOutlined, QuestionCircleOutlined, MessageOutlined, InboxOutlined,
+  DownOutlined,
 } from "@ant-design/icons";
 import { GlossaryProvider } from "./glossary.jsx";
 import { useAuth } from "./auth.jsx";
@@ -129,7 +130,9 @@ export default function App() {
   return (
     <GlossaryProvider>
       <Layout style={{ minHeight: "100vh" }}>
-        <Sider theme="dark" width={210}>
+        <Sider theme="dark" width={210}
+          style={{ position: "fixed", height: "100vh", left: 0, top: 0, bottom: 0,
+            overflow: "auto" }}>
           <div style={{ height: 56, display: "flex", alignItems: "center",
             justifyContent: "center", color: "#fff", fontWeight: 600,
             fontSize: 15, letterSpacing: 1 }}>
@@ -142,7 +145,7 @@ export default function App() {
             onClick={({ key }) => nav(key)}
           />
         </Sider>
-        <Layout>
+        <Layout style={{ marginLeft: 210 }}>
           <Header style={{ background: "#fff", padding: "0 24px",
             display: "flex", alignItems: "center", justifyContent: "space-between",
             boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
@@ -160,8 +163,10 @@ export default function App() {
                 <Avatar size="small" icon={<UserOutlined />} />
                 <span>{user.name || user.id}</span>
                 <Tag color={role.color} style={{ marginRight: 0 }}>{role.text}</Tag>
+                <DownOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
               </Space>
             </Dropdown>
+            <Button type="text" icon={<LogoutOutlined />} onClick={() => logout()}>登出</Button>
             </Space>
           </Header>
           <Content style={{ margin: 24 }}>

@@ -7,3 +7,12 @@ After the task, an artifact `titles.txt` exists under `output/` and satisfies:
   top-to-bottom listing order.
 - No extra numbering, bullets, blank lines, or trailing commentary.
 - The page itself is unchanged (task is read-only).
+
+For the current material (`input/articles.html`, newest-first listing), the
+correct three lines are:
+
+```
+Edge NPU Benchmarks: What Changed in 2026
+Choosing Between Postgres and SQLite for Embedded Apps
+Three Async Pitfalls Every Rust Team Hits
+```

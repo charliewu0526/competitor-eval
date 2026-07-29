@@ -4,7 +4,7 @@ import {
   Card, Collapse, Segmented, Tag, Typography, Spin, Empty, Space, Alert,
   Button, message,
 } from "antd";
-import { ThunderboltOutlined, DownloadOutlined } from "@ant-design/icons";
+import { ThunderboltOutlined, DownloadOutlined, CheckCircleOutlined } from "@ant-design/icons";
 import { getCatalog, claimFromCatalog, downloadTaskInput } from "../api.js";
 import { useAuth } from "../auth.jsx";
 
@@ -32,7 +32,7 @@ function CompetitorTags({ competitors }) {
   );
 }
 
-function TaskPanel({ task, canClaim, onClaim, claiming }) {
+function TaskPanel({ task, canClaim, onClaim, claiming, claimed }) {
   // 方案B: 领取粒度细化到「题×产品」—— 每个参赛产品一个独立领取按钮,
   // 不同人可用各自账号分别领同题的不同产品。参赛集 = participating (GATE 派生)。
   const participating = task.participating || [];
@@ -49,13 +49,18 @@ function TaskPanel({ task, canClaim, onClaim, claiming }) {
             不同产品可由不同人分别领取。领后去『我的任务』交这个产品的产物。
           </Text>
           <Space size={[8, 8]} wrap>
-            {participating.map((pid) => (
-              <Button key={pid} type="primary" icon={<ThunderboltOutlined />}
-                loading={claiming === `${task.task_id}::${pid}`}
-                onClick={() => onClaim(task.task_id, pid)}>
-                领取 {nameOf(pid)}
-              </Button>
-            ))}
+            {participating.map((pid) => {
+              const isClaimed = claimed && claimed.has(`${task.task_id}::${pid}`);
+              return (
+                <Button key={pid} type={isClaimed ? "default" : "primary"}
+                  icon={isClaimed ? <CheckCircleOutlined /> : <ThunderboltOutlined />}
+                  disabled={isClaimed}
+                  loading={claiming === `${task.task_id}::${pid}`}
+                  onClick={() => onClaim(task.task_id, pid)}>
+                  {isClaimed ? `已领取 ${nameOf(pid)}` : `领取 ${nameOf(pid)}`}
+                </Button>
+              );
+            })}
           </Space>
         </div>
       )}
@@ -141,6 +146,9 @@ export default function TaskCatalog() {
   const [err, setErr] = useState(null);
   const [domain, setDomain] = useState("全部");
   const [claiming, setClaiming] = useState(null);
+  // 已成功领取的 `${taskId}::${product}` 集合 —— 领后按钮置灰显示"已领取",
+  // 消除"点了没反应/是否重复领"的疑虑(F3)。本地态即可,权威锁在后端。
+  const [claimed, setClaimed] = useState(() => new Set());
 
   useEffect(() => {
     getCatalog().then(setGroups).catch((e) => setErr(e.userMessage || String(e)));
@@ -153,9 +161,14 @@ export default function TaskCatalog() {
     setClaiming(`${taskId}::${product}`);
     try {
       await claimFromCatalog(taskId, product);
+      setClaimed((prev) => new Set(prev).add(`${taskId}::${product}`));
       message.success(`已领取 ${product},去『我的任务』提交这个产品的产物`);
       nav("/assignments");
     } catch (e) {
+      // 已被自己领过(后端 409 含"已被你领取")也标为已领,按钮置灰不再诱导重复点。
+      if (/已被你领取/.test(e.userMessage || String(e))) {
+        setClaimed((prev) => new Set(prev).add(`${taskId}::${product}`));
+      }
       message.warning(e.userMessage || String(e));
     } finally {
       setClaiming(null);

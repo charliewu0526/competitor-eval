@@ -34,7 +34,7 @@ cloud-only rival that's `cannot-reach` on the WeChat task can still 参赛 here.
 | `prompt.md` | human | the exact instruction handed to each product |
 | `meta.json` | **machine** | single source of truth; `task_spec` mirrors F1 TaskSpec |
 | `scoring.md` | human | how this task is judged |
-| `input/` | both | `target-url.txt` — the page URL |
+| `input/` | both | `target-url.txt` — points to the local `articles.html`; `articles.html` — the list page (newest-first) |
 | `expected/` | both | correct end-state description |
 | `output/` | both | per-run `titles.txt` |
 | `evidence/` | both | logs / screenshots per run |
