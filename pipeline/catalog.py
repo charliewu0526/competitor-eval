@@ -38,6 +38,12 @@ DOMAIN_LABELS: dict[str, dict] = {
                                       "在另一个 app 交叉核对、做判断、在第三个 app "
                                       "产出、再去沟通/排期。跨多个本地软件, 只有真能"
                                       "操控全套桌面的产品够得着。"},
+    "assistant-integration": {"label": "助理集成 (云端/API 个人助理)",
+                              "hint": "个人 AI 助理靠连接 Gmail/Slack/CRM 等 SaaS 的 "
+                                      "API 干活(收件箱三分类、晨报、会前简报、跨工具"
+                                      "编排), 而非视觉操控本地 GUI。云端产品在此域走"
+                                      "跨层轨(api-or-integration), 原生本地产品是超集。"
+                                      "含验证竞品主打卖点/宣传话术是否属实的题。"},
 }
 
 

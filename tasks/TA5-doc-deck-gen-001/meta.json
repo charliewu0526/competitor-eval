@@ -1,0 +1,37 @@
+{
+  "schema": "taskbank-v1",
+  "assertions_module": "tasks.TA5_doc_deck_gen_001",
+  "task_spec": {
+    "task_id": "TA5-doc-deck-gen-001",
+    "domain": "1",
+    "app": "email-assistant",
+    "prompt": "基于 input/notes.md(我整理的三家竞品原始要点)和 input/outline.txt(我要的结构),生成一份竞品对比材料:先产出对比文档 output/compare-doc.md(结构化正文+一句话结论),再据此生成一份演示 output/deck.md(封面+每家一页+总结页, 用 markdown 幻灯片分页)。忠于 notes 素材, 缺的数据如实标未提供, 禁编造数字。",
+    "core_assertions": [
+      "primary: output/compare-doc.md 存在且按 outline 结构含三家对比+结论",
+      "primary: output/deck.md 存在且分页结构完整(封面/每家一页/总结)",
+      "primary: 内容忠于 notes、缺失数据如实标注未编造(人工核验, 呼应H1反幻觉)",
+      "secondary: 文档与演示的结构清晰度与表达质量(盲评主观轴)"
+    ],
+    "expects_file": true,
+    "tier": "core-common",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "assistant-integration",
+    "task_nature": "long-horizon",
+    "setup": "助理集成域(云端/API), 对标 Town 已上线的 Town Docs + Town Decks(自然语言生成文档/演示)。起始素材:input/notes.md(三家竞品原始要点, 其中一家部分数据缺失)、input/outline.txt(期望结构)。素材由系统统一提供, 请勿自建或更换。产物为 output/compare-doc.md + output/deck.md, 忠于素材、缺数据如实标注。"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "对标 Town Docs/Decks(官网 features 页, 已上线)。clean(none):据 notes+outline 成文成稿, 多步产出(先文档后演示)属 long-horizon。埋一处 notes 缺失数据, 考反编造如实标注(呼应H1)。"
+  },
+  "files": {
+    "input": "input/notes.md 三家竞品原始要点 / input/outline.txt 期望结构",
+    "expected": "expected/end-state.md — 文档与演示应含的结构与要点",
+    "output": "output/compare-doc.md 对比文档 / output/deck.md 演示分页",
+    "evidence": "evidence/ — 每次运行的日志/截图"
+  }
+}

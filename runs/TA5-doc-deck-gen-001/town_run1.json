@@ -1,0 +1,19 @@
+{
+  "product": "town",
+  "run_idx": 1,
+  "gate": "api-or-integration",
+  "artifact_path": "/Users/charlie/.violoop/workspace/competitor-eval/tasks/TA5-doc-deck-gen-001/output/compare-doc.md",
+  "deck_structure_ok": true,
+  "faithful_no_fab": true,
+  "transcript_excerpt": "Townie 用 Town Docs 生成对比文档(C价格如实标'未公开'), 再用 Town Decks 生成5页演示(封面/A/B/C/总结), 忠于notes。",
+  "artifact_summary": "Townie 经 API 集成产出 compare-doc.md(等价工件)。",
+  "screenshots_note": "(pilot 无截图)",
+  "evidence_source": "log",
+  "env_meta": {
+    "operator": "Town (Townie, cloud)",
+    "surface": "@town.com email + web",
+    "date": "2026-07-29",
+    "note": "跨层轨: 靠API集成干活, 非本地GUI操控"
+  },
+  "claimed_success": true
+}

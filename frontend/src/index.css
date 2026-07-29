@@ -8,3 +8,5 @@ body {
 .page-title { margin: 0 0 4px; }
 .page-sub { color: #8c8c8c; margin: 0 0 20px; font-size: 13px; }
 .dim-cell { font-variant-numeric: tabular-nums; }
+/* 反馈台:需人工 / AI 失败的反馈优先处理,红底高亮(story 20)。 */
+.report-priority-row > td { background: #fff1f0 !important; }

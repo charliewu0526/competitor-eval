@@ -195,6 +195,38 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_ts           REAL,
     expires_ts           REAL                -- NULL = 不过期
 );
+
+-- === MR-A (#55) 用户反馈 (User Report) 状态机厚地基 (PRD #54 / ADR-0020~0023) ==
+-- 全新独立实体, 自有表、自有状态机, 与 findings 两条流并行不混 (ADR-0020: 本表
+-- 不引用 findings, findings 也不引用本表)。此表一次性含齐 B/C/C2/D 全部要用的列
+-- (即便 MR-A 暂不填), 让后续票只往已存在字段填行为、不再 migrate schema
+-- (prefactor: make the change easy, then make the easy change)。
+-- 状态机 (CONTEXT v4「反馈状态机」, 守卫在 pipeline/reports.py, store 只落地):
+--   submitted -> queued -> ai-working -> 三分叉
+--     patch-ready (低危 diff+冒烟过, 等 owner 审)
+--     needs-human (碰禁区/改不了, 转人工)
+--     ai-failed   (试了但测试没过)
+--   owner 审: 批准 -> resolved (金丝雀失败自动回滚, 退回 needs-human)
+--            拒绝 -> needs-human (可留言让 AI 重试一次)
+--   终态 closed, 通知提交者。
+CREATE TABLE IF NOT EXISTS user_report (
+    id                   TEXT PRIMARY KEY,   -- 反馈 id
+    submitter            TEXT NOT NULL,      -- 提交者 users.id (仅登录用户, 可追责)
+    status               TEXT NOT NULL DEFAULT 'submitted',  -- 见上状态机
+    text                 TEXT,               -- 用户填的 bug 文字描述
+    created_ts           REAL,
+    updated_ts           REAL,               -- 每次状态流转刷新 (最近处理时间)
+    -- 后续票 (C/C2/D) 要用的列, MR-A 一次性建好、暂不填 --------------------
+    branch_name          TEXT,               -- C: 修复 Agent 隔离 worktree 的分支名
+    diagnosis            TEXT,               -- C: AI/人的诊断说明 (转人工时填)
+    diff_ref             TEXT,               -- C: 候选补丁 diff 的路径引用 (走 artifact_store, 不入库)
+    test_result          TEXT,               -- C: Agent 跑过的测试结果摘要
+    good_commit          TEXT,               -- D: 上线前的 good commit (金丝雀失败 checkout 回滚锚点)
+    resolved_ts          REAL                -- D: 修复上线 (resolved) 的时间
+);
+-- reports_by_status / 反馈台按 status 过滤与高亮 (needs-human/ai-failed), 建索引.
+CREATE INDEX IF NOT EXISTS idx_user_report_status ON user_report(status);
+CREATE INDEX IF NOT EXISTS idx_user_report_submitter ON user_report(submitter);
 """
 
 
@@ -949,6 +981,93 @@ def delete_session(con, token: str) -> None:
     """登出: 撤销会话令牌."""
     con.execute("DELETE FROM sessions WHERE token=?", (token,))
     con.commit()
+
+
+# --- User Report (MR-A #55) ----------------------------------------------
+# 落地原语 (方言无关, SQLite/PG 双穿通)。合法流转守卫不在此层 —— store 什么状态都
+# 肯写, 策略层 pipeline/reports.py 拦非法跳转 (与 assignments/store 分工一致)。
+def upsert_user_report(con, r: dict) -> None:
+    """Persist a User Report. Idempotent on id.
+
+    厚表一次性含齐 core + branch_name/diagnosis/diff_ref/test_result/good_commit/
+    resolved_ts。MR-A 只填 core, 其余列由 C/C2/D 填 —— 此 upsert 全字段覆盖写,
+    未给的键落 None (不静默丢已有值: 调用方 reports.py 先 get 再带全字段回写)。
+    """
+    con.execute("""
+        INSERT INTO user_report (id, submitter, status, text, created_ts,
+            updated_ts, branch_name, diagnosis, diff_ref, test_result,
+            good_commit, resolved_ts)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET
+            submitter=excluded.submitter, status=excluded.status,
+            text=excluded.text, updated_ts=excluded.updated_ts,
+            branch_name=excluded.branch_name, diagnosis=excluded.diagnosis,
+            diff_ref=excluded.diff_ref, test_result=excluded.test_result,
+            good_commit=excluded.good_commit, resolved_ts=excluded.resolved_ts
+    """, (r["id"], r["submitter"], r.get("status", "submitted"), r.get("text"),
+          r.get("created_ts", time.time()), r.get("updated_ts", time.time()),
+          r.get("branch_name"), r.get("diagnosis"), r.get("diff_ref"),
+          r.get("test_result"), r.get("good_commit"), r.get("resolved_ts")))
+    con.commit()
+
+
+def get_user_report(con, report_id: str) -> dict | None:
+    row = con.execute("SELECT * FROM user_report WHERE id=?",
+                      (report_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def set_user_report_status(con, report_id: str, status: str, *,
+                           expected_from: str | None = None,
+                           fields: dict | None = None,
+                           now: float | None = None) -> bool:
+    """把一条 User Report 推进到 status; 顺带写入本次流转产出的字段 (fields)。
+
+    expected_from 给出时, 只在当前 status 恰为该值时才翻转 (带条件原子 UPDATE),
+    返回是否命中 —— 与 set_assignment_status 同款守卫, 让策略层 (reports.py) 能堵
+    住并发/TOCTOU (例如 cron 与 owner 审同时动一条)。fields 是本次一并落地的产出
+    列 (branch_name/diagnosis/diff_ref/test_result/good_commit/resolved_ts 白名单),
+    updated_ts 每次流转自动刷新。命中 0 行 (守卫不满足或 id 不存在) -> False。
+    """
+    allowed = {"branch_name", "diagnosis", "diff_ref", "test_result",
+               "good_commit", "resolved_ts"}
+    sets = ["status=?", "updated_ts=?"]
+    vals: list = [status, now if now is not None else time.time()]
+    for k, v in (fields or {}).items():
+        if k not in allowed:
+            raise ValueError(f"set_user_report_status: 非法字段 {k!r} "
+                             f"(允许: {sorted(allowed)!r})")
+        sets.append(f"{k}=?")
+        vals.append(v)
+    guard = " AND status=?" if expected_from is not None else ""
+    vals.append(report_id)
+    if expected_from is not None:
+        vals.append(expected_from)
+    cur = con.execute(
+        f"UPDATE user_report SET {', '.join(sets)} WHERE id=?" + guard,
+        tuple(vals))
+    con.commit()
+    return cur.rowcount == 1
+
+
+def reports_by_status(con, status: str) -> list[dict]:
+    """反馈台/cron 按状态取 (cron 扫 queued; 反馈台高亮 needs-human/ai-failed)。"""
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM user_report WHERE status=? ORDER BY created_ts, id",
+        (status,))]
+
+
+def reports_for_submitter(con, submitter: str) -> list[dict]:
+    """提交者查自己反馈 (提交者侧只见状态, diff/诊断由 RBAC 层在读出后裁剪)。"""
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM user_report WHERE submitter=? ORDER BY created_ts, id",
+        (submitter,))]
+
+
+def all_user_reports(con) -> list[dict]:
+    """反馈台全量 (owner 专属页面, 呼应两条流不混)。"""
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM user_report ORDER BY created_ts, id")]
 
 
 # --- reads ----------------------------------------------------------------

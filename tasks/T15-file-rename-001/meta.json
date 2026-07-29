@@ -26,6 +26,13 @@
     "final_by": "human:charlie",
     "note": "Auto-seeded simple task for computer-control."
   },
+  "expected_artifact_filenames": [
+    "2025-07-15_001.jpg",
+    "2025-07-15_002.jpg",
+    "2025-07-16_001.jpg",
+    "2025-08-01_001.jpg",
+    "2025-08-01_002.jpg"
+  ],
   "assertions_module": "tasks.T15_file_rename_001",
   "files": {
     "input": "input/ — starting materials (may be faked)",

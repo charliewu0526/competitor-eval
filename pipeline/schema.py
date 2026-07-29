@@ -19,9 +19,14 @@ DIRTY_VALUES = ("none", "light", "heavy")
 # 交叉核对→判断→产出→沟通), 模拟一个岗位的一段完整工作. 天然跨 app, 只有真能
 # 操控本地全套桌面的产品够得着 (GATE 按域收窄, 云端/单一浏览器产品判 cannot-reach,
 # 非差). 与现有单一能力域正交并存: 原子任务留作基线, 高阶职业任务拉真实差距.
+# assistant-integration (2026-07 新增): 云端/API 集成类助理能力域 —— 靠连接
+# Gmail/Slack/Notion/CRM 等 SaaS 的 API 干活, 而非视觉操控本地 GUI。目标产品是
+# Town 这类"个人 AI 助理/参谋长"。天然 requires_local_desktop=false: 云端产品
+# 在此域走 api-or-integration 跨层轨(可达但非同条件), 原生本地桌面产品(vio)是
+# native 超集判 native-operable。与桌面型能力域正交并存, 供跨层对比而非冒充同台。
 CAPABILITY_DOMAIN_VALUES = ("wechat-im", "office-suite", "no-api-app",
                             "computer-control", "browser-web",
-                            "professional-workflow")
+                            "professional-workflow", "assistant-integration")
 # workflow-heavy (2026-07 新增): 跨 app、含判断分叉的高阶职业任务. 与 stress
 # 的区别: stress 压的是脏数据, workflow-heavy 压的是流程复杂度 + 跨 app + 判断.
 TASK_NATURE_VALUES = ("simple", "long-horizon", "scheduled", "dirty-data",

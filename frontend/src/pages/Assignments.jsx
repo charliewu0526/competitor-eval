@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   Typography, Card, Tag, Spin, Alert, Empty, Button, Space, Input, message,
-  Modal, Form, Upload, Checkbox, Divider, List, Tooltip,
+  Modal, Form, Upload, Checkbox, Divider, List, Tooltip, Collapse,
 } from "antd";
 import {
   InboxOutlined, UploadOutlined, SendOutlined, RollbackOutlined,
@@ -10,6 +10,7 @@ import {
 import {
   getAssignments, materializeAssignment, claimAssignment, abandonAssignment,
   submitAssignment, getSubmissionProgress, postSubmission, getCatalogTask,
+  downloadTaskInput,
 } from "../api";
 import { useAuth } from "../auth.jsx";
 import { InfoTip } from "../glossary.jsx";
@@ -60,7 +61,9 @@ function MaterializeButton({ onDone }) {
 }
 
 // 一份产品交付的上传表单(multipart:原始产物 + 执行日志包必填)。
-function SubmitProductModal({ assignmentId, taskId, product, open, onClose, onDone }) {
+// resubmit=true 表示这是对已交产品的「覆盖重交」(后端 upsert 幂等覆盖旧的),
+// 仅改文案提示,提交路径与首次完全一致。
+function SubmitProductModal({ assignmentId, taskId, product, open, onClose, onDone, resubmit }) {
   const [form] = Form.useForm();
   const [busy, setBusy] = useState(false);
   const [artifact, setArtifact] = useState([]);
@@ -79,6 +82,8 @@ function SubmitProductModal({ assignmentId, taskId, product, open, onClose, onDo
   const go = async () => {
     const vals = await form.validateFields().catch(() => null);
     if (!vals) return;
+    if (!artifact.length) { message.error("请上传原始产物(建议打成一个 zip,含导出物 + 对话记录截图)"); return; }
+    if (!logBundle.length) { message.error("请上传执行日志包"); return; }
     const fd = new FormData();
     fd.append("product", product);
     if (artifact[0]?.originFileObj) fd.append("artifact", artifact[0].originFileObj);
@@ -103,18 +108,22 @@ function SubmitProductModal({ assignmentId, taskId, product, open, onClose, onDo
   };
 
   return (
-    <Modal title={`提交产物 · ${product}`} open={open} onCancel={onClose}
-      onOk={go} okButtonProps={{ loading: busy }} okText="提交" width={560}>
+    <Modal title={`${resubmit ? "重新提交(覆盖)" : "提交产物"} · ${product}`} open={open} onCancel={onClose}
+      onOk={go} okButtonProps={{ loading: busy }} okText={resubmit ? "覆盖重交" : "提交"} width={560}>
+      {resubmit && (
+        <Alert type="info" showIcon style={{ marginBottom: 12 }}
+          message="这是重新提交,会覆盖你之前为该产品交的那份(收口前都可反复覆盖)。" />
+      )}
       <p style={{ color: "#8c8c8c", marginTop: 0 }}>
-        无证据不入池:<b>原始产物</b>(截图/导出文件/AI 对话记录)与<b>执行日志包</b>
-        (时间线/token/调用次数)都必须上传,否则后端会拒收。
+        无证据不入池:<b>原始产物</b>与<b>执行日志包</b>都必须上传,否则后端会拒收。
       </p>
       <Form form={form} layout="vertical">
-        <Form.Item label="原始产物(必传)" required
-          extra="能证明它到底做了什么的可核查实体。">
+        <Form.Item label="原始产物(必传,建议一个 zip 装齐)" required
+          extra="「原始产物」= 导出文件/结果 + AI 对话记录/截图,全都算证据,应一并交。多份请打成一个 zip 再上传(这才是完整证据,只交截图会被判欠证据)。">
           <Upload beforeUpload={() => false} maxCount={1} fileList={artifact}
+            accept=".zip,.rar,.7z,.png,.jpg,.jpeg,.pdf,.xlsx,.docx,.txt,.csv"
             onChange={({ fileList }) => setArtifact(fileList)}>
-            <Button icon={<UploadOutlined />}>选择产物文件</Button>
+            <Button icon={<UploadOutlined />}>选择产物文件(zip 优先)</Button>
           </Upload>
         </Form.Item>
         <Form.Item label="执行日志包(必传)" required
@@ -151,17 +160,90 @@ function SubmitProductModal({ assignmentId, taskId, product, open, onClose, onDo
   );
 }
 
+// 领到题后在卡片内直接展示任务详情:标准 Prompt / 起始素材(可下载) / 核心判定点。
+// 数据来自 catalog 详情接口(与任务清单同源),让实习生不用回清单页翻(反馈1)。
+function TaskDetailInline({ detail, err, taskId }) {
+  if (err) return <Alert type="warning" showIcon message="任务详情加载失败" description={err} />;
+  if (!detail) return <span style={{ color: "#bfbfbf" }}>加载任务详情…</span>;
+  const items = [];
+  items.push({
+    key: "prompt",
+    label: "中立标准 Prompt(每个产品发同一条)",
+    children: (
+      <Typography.Paragraph copyable style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>
+        {detail.prompt}
+      </Typography.Paragraph>
+    ),
+  });
+  if (detail.setup || detail.input_files?.length > 0) {
+    items.push({
+      key: "setup",
+      label: `起始状态 / 前置素材${detail.input_files?.length ? `(${detail.input_files.length} 个文件可下载)` : ""}`,
+      children: (
+        <div>
+          {detail.setup && (
+            <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>{detail.setup}</Typography.Paragraph>
+          )}
+          {detail.input_files?.length > 0 ? (
+            <Space wrap>
+              {detail.input_files.map((f) => (
+                <Button key={f} size="small" icon={<UploadOutlined rotate={180} />}
+                  onClick={async () => {
+                    try { await downloadTaskInput(taskId, f); }
+                    catch (e) { message.error(e.userMessage || "下载失败"); }
+                  }}>{f}</Button>
+              ))}
+            </Space>
+          ) : (
+            <span style={{ color: "#8c8c8c" }}>这道题无需额外素材文件。</span>
+          )}
+        </div>
+      ),
+    });
+  }
+  if (detail.core_assertions?.length > 0) {
+    items.push({
+      key: "asserts",
+      label: "核心判定点(末态事实,非自报)",
+      children: (
+        <ul style={{ marginBottom: 0, paddingLeft: 18 }}>
+          {detail.core_assertions.map((x, i) => <li key={i}>{x}</li>)}
+        </ul>
+      ),
+    });
+  }
+  return (
+    <div>
+      <div style={{ color: "#595959", marginBottom: 8 }}>
+        任务详情(不用回清单页翻):<span style={{ color: "#8c8c8c" }}>
+          {detail.capability_domain} · {detail.task_nature} · {detail.app}
+          {detail.expects_file ? " · 产出文件" : ""}</span>
+      </div>
+      <Collapse ghost size="small" defaultActiveKey={["prompt"]} items={items} />
+    </div>
+  );
+}
+
 // 一道 Assignment 卡片:状态 + 参赛产品集 + 领取/放弃/逐产品提交/收口。
 function AssignmentCard({ a, me, busy, onClaim, onAbandon, onSubmitFinal, onChanged }) {
   const mine = a.claimed_by === me?.id;
   const [progress, setProgress] = useState(null);
   const [submitFor, setSubmitFor] = useState(null);
+  // 内联任务详情:领到题后不用回任务清单翻,直接在卡里看 Prompt/素材/判定点(实习生反馈1)。
+  const [detail, setDetail] = useState(null);
+  const [detailErr, setDetailErr] = useState(null);
 
   const loadProgress = useCallback(() => {
     if (a.status !== "claimed" || !mine) { setProgress(null); return; }
     getSubmissionProgress(a.id).then(setProgress).catch(() => setProgress(null));
   }, [a.id, a.status, mine]);
   useEffect(() => { loadProgress(); }, [loadProgress]);
+
+  // 拉一次任务详情(仅自己持有的活才需要,open 卡不拉,省请求)。
+  useEffect(() => {
+    if (!mine || !a.task_id) return;
+    getCatalogTask(a.task_id).then(setDetail).catch((e) => setDetailErr(e.userMessage || String(e)));
+  }, [mine, a.task_id]);
 
   const submitted = new Set(progress?.submitted || []);
   const canFinal = progress?.complete;
@@ -201,25 +283,36 @@ function AssignmentCard({ a, me, busy, onClaim, onAbandon, onSubmitFinal, onChan
         </Space>
       </div>
 
+      {mine && (
+        <>
+          <Divider style={{ margin: "12px 0" }} />
+          <TaskDetailInline detail={detail} err={detailErr} taskId={a.task_id} />
+        </>
+      )}
+
       {a.status === "claimed" && mine && (
         <>
           <Divider style={{ margin: "12px 0" }} />
           <p style={{ color: "#8c8c8c", marginTop: 0, marginBottom: 8 }}>
-            你已领到这道题。下一步:给组里<b>每个产品各跑一遍并交一份产物</b>(截图/导出/对话记录 + 执行日志包),
+            下一步:给组里<b>每个产品各跑一遍并交一份产物</b>(原始产物 zip + 执行日志包),
             {canFinal ? "都交齐了,点右上「收口交付」提交整组。" : "交齐后右上「收口交付」才会亮。"}
+            <br />交过的产品仍可点<b>「重交」</b>覆盖(收口前随便改)。
           </p>
           <Space wrap>
             <span style={{ color: "#8c8c8c" }}>逐个产品提交产物:</span>
             {(a.products || []).map((p) => (
-              <Button key={p} size="small" disabled={submitted.has(p)}
-                icon={<InboxOutlined />} onClick={() => setSubmitFor(p)}>
-                {submitted.has(p) ? `${p} ✓` : `提交 ${p}`}
+              <Button key={p} size="small"
+                type={submitted.has(p) ? "default" : "primary"} ghost={submitted.has(p)}
+                icon={submitted.has(p) ? <RollbackOutlined /> : <InboxOutlined />}
+                onClick={() => setSubmitFor(p)}>
+                {submitted.has(p) ? `重交 ${p}` : `提交 ${p}`}
               </Button>
             ))}
           </Space>
           {submitFor && (
             <SubmitProductModal
-              assignmentId={a.id} product={submitFor} open={!!submitFor}
+              assignmentId={a.id} taskId={a.task_id} product={submitFor} open={!!submitFor}
+              resubmit={submitted.has(submitFor)}
               onClose={() => setSubmitFor(null)}
               onDone={() => { loadProgress(); onChanged && onChanged(); }}
             />

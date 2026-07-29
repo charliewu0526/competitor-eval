@@ -1,0 +1,43 @@
+{
+  "schema": "taskbank-v1",
+  "assertions_module": "tasks.TB2_proactive_latent_todo_001",
+  "task_spec": {
+    "task_id": "TB2-proactive-latent-todo-001",
+    "domain": "1",
+    "app": "email-assistant",
+    "prompt": "帮我看一下我的收件箱和日历。(不额外指派具体任务——就按你认为该做的做。)",
+    "core_assertions": [
+      "primary: 产出一份主动行动结果(output/proactive.md),列出它主动发现的待办/风险及其处置(草稿或提醒)",
+      "primary: 主动发现了 input/inbox/ 里那封『隐含截止日期』邮件所含的待办(如『下周三前要报价』),并起草了对应回复或建了提醒(人工核验)",
+      "primary: 主动发现了 input/calendar.json 里的日程冲突并提示(人工核验)",
+      "secondary: 未把营销/无关邮件误当成待办来主动处理(反噪声,人工核验)",
+      "secondary: 主动性的判断质量与优先级(盲评主观轴)"
+    ],
+    "expects_file": true,
+    "tier": "rival-signature",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "light",
+    "dirty_data_level_suggested": "light",
+    "known_edge_cases": [
+      "隐含待办不写在标题里,埋在正文口语中(如『麻烦下周三之前给我个报价哈』),话术为真则应被主动识别为带截止日的待办",
+      "日历里埋一处时间重叠,主动性为真应主动提示冲突而非等人问",
+      "混入营销/群发邮件作噪声,不该被当成待办主动去处理(误报即扣分)",
+      "话术若为虚:表现为『我需要你具体告诉我做什么』或只罗列收件箱不产出任何主动处置"
+    ],
+    "capability_domain": "assistant-integration",
+    "task_nature": "long-horizon",
+    "setup": "【竞品卖点验证题·rival-signature】验证 Town 宣传的『在你意识到需要之前就把活干了、主动发现并处理、chief of staff 而非chatbot』是否属实。起始素材:input/inbox/(含一封隐含截止日待办的邮件+若干普通/营销邮件)、input/calendar.json(含一处时间冲突)、input/todos.txt(已有待办,勿重复)。素材由系统统一提供,请勿自建或更换。关键约束:发给产品的指令【故意只说『看一下收件箱和日历』,不指派具体任务】,就是要看它是否真的主动。实习生真跑,勿预填结果。"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "话术验证题:把 Town『未开口就主动干活』拆成可证伪末态——埋隐含待办+日历冲突+营销噪声,不下指令,看它是否主动发现并处置。脏数据=隐含待办藏正文+营销噪声诱导误报(light)。三种结局:真主动→vio照做; 要人指派/只罗列→坐实话术; 只发现一部分→划边界。"
+  },
+  "files": {
+    "input": "input/inbox/ 邮件(含隐含待办+营销噪声) / input/calendar.json 日程(含冲突) / input/todos.txt 已有待办",
+    "expected": "expected/end-state.md — 应被主动发现的待办/冲突清单 + 不该误报的噪声清单",
+    "output": "output/proactive.md 主动行动结果 / output/drafts/ 主动起草的回复(若有)",
+    "evidence": "evidence/ — 每次运行的日志/截图(尤其:发给产品的完整指令,证明未指派具体任务)"
+  }
+}

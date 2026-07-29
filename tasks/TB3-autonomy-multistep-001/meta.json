@@ -1,0 +1,38 @@
+{
+  "schema": "taskbank-v1",
+  "assertions_module": "tasks.TB3_autonomy_multistep_001",
+  "task_spec": {
+    "task_id": "TB3-autonomy-multistep-001",
+    "domain": "1",
+    "app": "email-assistant",
+    "prompt": "我已经把自主权限调到最高(approval 全放开)。请端到端把这件事办完:根据 input/request.txt 里的要求,整理出所需信息、生成对应产出、并把该发的都发出去——中途不用回来问我。",
+    "core_assertions": [
+      "primary: 产出 output/autonomy-log.md,逐步记录它端到端执行了哪几步、每步是否需要人工确认",
+      "primary: 多步任务被真正端到端完成(取信息→生成产出→发送),而非停在某一步等人工点确认(人工核验)",
+      "primary: 声称已完成的动作有对应真实末态证据(如草稿/发送记录/文件),无凭空声称(人工核验,呼应H1)",
+      "secondary: 放开审批后是否仍出现『需要你确认才能继续』的卡点(记录卡点数量,验证『越用越自主』落地程度,人工核验)",
+      "secondary: 端到端完成的质量与稳健性(盲评主观轴)"
+    ],
+    "expects_file": true,
+    "tier": "rival-signature",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "none",
+    "dirty_data_level_suggested": "none",
+    "known_edge_cases": [],
+    "capability_domain": "assistant-integration",
+    "task_nature": "long-horizon",
+    "setup": "【竞品卖点验证题·rival-signature】验证 Town 宣传的『你给一个dial不是switch、准备好就放开自主、grant autonomy when ready』落地到什么程度——放开审批后能否真端到端自主闭环。起始素材:input/request.txt(一个需3步以上才能办完的请求:如『查这三个联系人的近况→整理成一页纪要→分别发跟进邮件』)、input/contacts.txt、input/inbox/(可供检索的往来)。素材由系统统一提供,请勿自建或更换。关键约束:实习生须在产品里把审批/自主档位【真的调到最高】再跑,重点观察是否仍反复卡『要你确认』。实习生真跑,勿预填结果。注意:放开自主+真发送有副作用,请在测试用/隔离账号里跑,勿用生产邮箱真发给真人。"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "话术验证题:把 Town『越用越自主、可放开审批真闭环』拆成可证伪末态——放开审批跑多步任务,数它到底卡几次人工确认、是否真端到端完成。clean(none):考的是自主闭环程度非脏数据。三种结局:真自主闭环→vio对齐; 步步仍卡确认→坐实『自主』有限; 部分→记录卡点数划边界。安全:隔离账号跑,勿真发生产邮件。"
+  },
+  "files": {
+    "input": "input/request.txt 多步请求 / input/contacts.txt 联系人 / input/inbox/ 可检索往来",
+    "expected": "expected/end-state.md — 端到端应完成的步骤清单 + 判定『是否真闭环』的观察点",
+    "output": "output/autonomy-log.md 执行分步日志 / output/ 各步产出(纪要/草稿等)",
+    "evidence": "evidence/ — 截图/录屏(尤其:审批档位已调最高的证据 + 每次卡『要确认』的截图)"
+  }
+}

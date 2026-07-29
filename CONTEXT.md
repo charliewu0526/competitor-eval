@@ -81,3 +81,29 @@
 **方法 (Method / Learnable Insight)** — 研发能照着改的可迁移做法：看懂竞品为何强 → 抽象成做法 → 翻成 Violoop 能落地的建议。比差距证据包高一层,需产品判断 + 工程洞察。**方法无客观锚点**(不像客观断言有末态、主观有黄金集),故质量靠人把关,不靠机器。
 
 **方法复核闸 (Method Gate)** — 实习生在差距证据包上提炼方法**初稿**,但初稿不能直接导给研发；必须经审核员/PM 把关后才能导出。防新人把「截图更好看」当方法、或机理没看懂瞎提炼,污染系统辛苦建立的可信度(呼应立身之本:无证据支撑的漂亮话不算数)。
+
+---
+
+## 用户反馈与 AI 辅助修复（v4，grill 中）
+
+**用户反馈 (User Report)** — 登录用户在使用系统时遇到 bug,主动提交的一条缺陷报告(文字描述 + 截图 + 自动附带的后端日志)。是**全新独立实体**,自有表、自有状态机,与「发现 (Finding)」两条流**并行不混**(ADR-0020):Finding 是评测引擎自动长出来的、喂产品判断的证据链;User Report 是人主动报的、喂「修 bug」的工程缺陷流,判定标准/生命周期/消费者都不同。仅**登录用户**(intern/reviewer/owner)可提交,每条绑定真实身份、可追责——公网匿名入口留到 v2。图片存储复用交付物上传管道(MR-7),不重造。
+
+**修复 Agent (Repair Agent)** — 运行时的自动修 bug 执行器 = 一个 **violoop generative 任务**(非外部 Claude Code),跑在**隔离 git worktree** 上,用 **heavy 档模型**(violoop 最强推理档,等价「调最强模型」)。由 cron agenda 每 5 分钟扫 `queued` 的 User Report 触发(队列轮询,松耦合;后端不直接同步调 AI,AI 挂了不影响系统主体,ADR-0021)。读反馈文字 + 截图(多模态)+ 后端日志 + 相关源码,在分支上产出候选 diff 并跑测试。**只起草补丁,绝不自动合并/部署**——人工闸门在环内(ADR-0020)。
+
+**低危白名单 + 硬禁区 (Repair Scope)** — 修复 Agent 的物理作用域边界,也是最强的 prompt-injection 护栏(反馈正文/截图都是人写的注入面,但 AI 越不出文件边界)。**只允许改**:前端组件/页面/样式/文案/纯展示逻辑这类「错了也只是界面坏、不伤数据不破安全」的低危区。**硬禁区**:鉴权/RBAC(登录与角色)、DB schema/迁移、脱敏规则、删数据的代码、`.env`/secrets、部署脚本。碰禁区 → 不自动改,转人工(ADR-0022)。
+
+**反馈状态机 (Report Lifecycle)** — `submitted` → `queued`(待 cron 扫)→ `ai-working` → 三分叉:`patch-ready`(低危区产出 diff+冒烟通过,等 owner 审)/ `needs-human`(碰禁区或 AI 判断改不了,转人工附诊断)/ `ai-failed`(试了但测试没过)。owner 审:批准 → 冒烟金丝雀 → `resolved`(金丝雀失败自动回滚,退回 `needs-human`);拒绝 → 可留言让 AI 重试一次或直接 `needs-human`。终态 `closed`,通知提交者。
+
+**冒烟金丝雀 + 自动回滚 (Smoke Canary)** — 单机形态下的上线安全网(ADR-0023):批准补丁 → 在合并后的代码上先起一个**临时端口的新进程** → 跑健康检查+冒烟测试(关键 API 200、前端能加载、核心页不白屏)→ 全过才把主进程/tunnel 切到新版本(旧版留待命),任一步失败自动 `git checkout` 回上一个 good commit + 重启旧版。未验证代码**永不接真实流量**。不做真·分流量金丝雀(要引反向代理网关,过重,留 v2)。**闸门前置**:上线动作若检测到有 in-flight 领题/评测(assignment/submission),排到无活跃任务的安静窗口再执行,不硬重启踹掉正在跑的评测。
+
+**反馈台 (Report Console)** — owner 专属页面,列所有 User Report + 状态 + 待审补丁(diff/测试结果/诊断),`needs-human`/`ai-failed` 高亮待处理。**不塞进现有看板(Finding 池)**,呼应两条流不混。提交者侧只能看自己反馈的**状态**(处理中/已修复/需人工)+ 修复上线后收到「已修复」通知,**看不到 diff 和内部诊断**(避免内部代码细节漏给实习生)。
+
+### 修复 Agent 运行时装配 (MR-C2 #58)
+
+修复 Agent 落成一个 **`*/5 * * * *` 的 violoop generative agenda 任务**(名 `competitor-eval-repair-agent`,capability=`local-automation` 够读码/跑构建/git)。violoop 的 AI 循环本身充当修复 Agent,与状态机之间隔着一个确定性 CLI `pipeline/repair_runner.py`:
+
+- **`claim`** — 原子领走最老的一条 `queued`(状态机 `expected_from` 守卫,天然串行,杜绝并发踩踏),建隔离 git worktree(`board/repair-worktrees/`),把多模态上下文(反馈文字+截图路径+后端日志+低危前端源码切片)dump 到 `<worktree>/.repair_context.json`,打印句柄给 AI。队列空 → `{report_id:null}` 空转 0 退出。
+- **AI 中段** — 只读上下文、只在 worktree 里改**低危前端展示层文件**修 bug。
+- **`finalize`** — 对 worktree 算**真实 git diff**(`diff --name-only` + `ls-files --others`)判定 AI **实际改了哪些文件**——**信 git 不信 AI 自报的 changed_files**,这是最强抗注入护栏(反馈正文/截图/上下文都是注入面,但判定只认物理落盘的文件路径)。全低危 → 跑**前端构建闸**(`bun run build`,对口:修复 Agent 只改前端;且干净 worktree 缺主树未跟踪 fixture 时全量 pytest 会假失败)→ 过则 `patch-ready`(落真实 diff 到 `board/repair-diffs/`)/挂则 `ai-failed`;碰硬禁区/灰区/空改动 → `needs-human`(绝不自动上,丢弃改动);AI `--no-fix` → `needs-human`。无论走哪条,末尾都 remove worktree + 删分支。
+
+**运行时前提(必读)**:① 依赖 owner 这台机器上的 **violoop 在线**才产补丁;violoop 挂了队列保证反馈不丢(排队等回来接着修)。② cron 任务与后端 uvicorn 是**两个进程但连同一个库**:`repair_runner` 读 `board/pg_uri.txt`(后端 `run_pg_backend.py` 写入的自托管 Postgres uri)对齐,无该文件则回落默认 SQLite。③ worktree 落 `board/repair-worktrees/`、候选 diff 落 `board/repair-diffs/`,均在 `board/`(git 忽略)下,不污染主工作树。④ 并发安全 = cron 每 5 分钟串行触发 + `claim` 的状态机守卫双重保证,不会有两个 agent 同改一仓库。

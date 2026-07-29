@@ -44,6 +44,13 @@ REQUIRED_ROUTES = {
     # MR-11 (#47) 差距报告前端接缝 (列表 + 单题)
     ("GET", "/api/gap-report"),
     ("GET", "/api/gap-report/{task_id}"),
+    # MR-B (#56) 用户反馈: 提交 + 我的状态 + owner 反馈台
+    ("POST", "/api/reports"),
+    ("GET", "/api/reports/mine"),
+    ("GET", "/api/reports/console"),
+    # MR-D (#59) 上线闸门: 批准(冒烟金丝雀)/ 拒绝
+    ("POST", "/api/reports/{report_id}/approve"),
+    ("POST", "/api/reports/{report_id}/reject"),
 }
 
 

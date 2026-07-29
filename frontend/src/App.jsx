@@ -6,7 +6,7 @@ import {
   DollarOutlined, BulbOutlined, ExperimentOutlined, SafetyCertificateOutlined,
   AuditOutlined, UnorderedListOutlined, AppstoreOutlined, DiffOutlined,
   UserOutlined, LogoutOutlined, SolutionOutlined, DeploymentUnitOutlined,
-  TeamOutlined, QuestionCircleOutlined,
+  TeamOutlined, QuestionCircleOutlined, MessageOutlined, InboxOutlined,
 } from "@ant-design/icons";
 import { GlossaryProvider } from "./glossary.jsx";
 import { useAuth } from "./auth.jsx";
@@ -28,6 +28,8 @@ import Assignments from "./pages/Assignments.jsx";
 import Methods from "./pages/Methods.jsx";
 import Users from "./pages/Users.jsx";
 import Help from "./pages/Help.jsx";
+import Feedback from "./pages/Feedback.jsx";
+import ReportConsole from "./pages/ReportConsole.jsx";
 
 const { Header, Sider, Content } = Layout;
 
@@ -49,6 +51,7 @@ const NAV = [
   { key: "/gap-report", icon: <DiffOutlined />, label: "差距报告", minRole: "intern" },
   { key: "/leaderboard", icon: <TrophyOutlined />, label: "排行榜", minRole: "intern" },
   { key: "/help", icon: <QuestionCircleOutlined />, label: "使用说明", minRole: "intern" },
+  { key: "/feedback", icon: <MessageOutlined />, label: "意见反馈", minRole: "intern" },
   { key: "/domain-board", icon: <AppstoreOutlined />, label: "分维度榜单", minRole: "reviewer" },
   { key: "/matrix", icon: <TableOutlined />, label: "按题矩阵", minRole: "reviewer" },
   { key: "/score", icon: <RadarChartOutlined />, label: "评分详情", minRole: "reviewer" },
@@ -58,6 +61,7 @@ const NAV = [
   { key: "/spotcheck", icon: <SafetyCertificateOutlined />, label: "抽查队列", minRole: "reviewer" },
   { key: "/authorizations", icon: <AuditOutlined />, label: "黄金集授权", minRole: "owner" },
   { key: "/users", icon: <TeamOutlined />, label: "用户管理", minRole: "owner" },
+  { key: "/report-console", icon: <InboxOutlined />, label: "反馈台", minRole: "owner" },
 ];
 
 // 路由 path -> 该页要求的 minRole(路由守卫用)。与 NAV 同源。
@@ -163,6 +167,8 @@ export default function App() {
               <Route path="/authorizations" element={<Guard path="/authorizations"><Authorizations /></Guard>} />
               <Route path="/users" element={<Guard path="/users"><Users /></Guard>} />
               <Route path="/help" element={<Guard path="/help"><Help /></Guard>} />
+              <Route path="/feedback" element={<Guard path="/feedback"><Feedback /></Guard>} />
+              <Route path="/report-console" element={<Guard path="/report-console"><ReportConsole /></Guard>} />
               {/* 无匹配路由的人话兜底页 —— 否则敲错 URL(如 /tasks 应为 /catalog)整片白屏。 */}
               <Route path="*" element={
                 <Result

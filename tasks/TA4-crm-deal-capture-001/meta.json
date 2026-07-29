@@ -1,0 +1,42 @@
+{
+  "schema": "taskbank-v1",
+  "assertions_module": "tasks.TA4_crm_deal_capture_001",
+  "task_spec": {
+    "task_id": "TA4-crm-deal-capture-001",
+    "domain": "1",
+    "app": "email-assistant",
+    "prompt": "扫描收件箱(input/inbox/)里的入站邮件,识别其中真正的销售机会(潜在客户主动询价/求合作),忽略供应商推销与营销邮件。对每个机会:把联系人写入 CRM(产出 output/crm-contacts.json,字段缺失如实留空、禁编造),并起草一封跟进回复到 output/drafts/。产出 output/deals.md 汇总识别到的机会及依据。禁止把推销邮件误判为机会,禁止编造联系人信息,禁止未经批准发送。",
+    "core_assertions": [
+      "primary: output/crm-contacts.json 存在且只含真实机会的联系人",
+      "primary: 机会识别正确——供应商推销/营销未被误判为销售机会(人工核验)",
+      "primary: 缺失字段(如电话/公司)如实留空未编造(人工核验, 呼应H1反幻觉)",
+      "secondary: 每个机会有对应跟进草稿且未自动发送(人工核验)",
+      "secondary: 机会判断依据与跟进措辞质量(盲评主观轴)"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "light",
+    "dirty_data_level_suggested": "light",
+    "known_edge_cases": [
+      "混入供应商推销/营销邮件, 须排除不得误判为销售机会(反噪声)",
+      "部分机会邮件缺电话/公司名字段, 须如实留空严禁编造(反幻觉, 呼应H1)",
+      "一封措辞热情但实为招聘/合作试探的模糊邮件, 需判断是否算销售机会"
+    ],
+    "capability_domain": "assistant-integration",
+    "task_nature": "workflow-heavy",
+    "setup": "助理集成域(云端/API), 对标 Town 的销售/CRM 运营卖点(从入站邮件发现机会→记录到HubSpot/Salesforce→起草跟进)。起始素材:input/inbox/(入站邮件, 混机会与推销)、input/crm-schema.txt(CRM字段定义)。素材由系统统一提供, 请勿自建或更换。联系人写入 output/crm-contacts.json, 草稿到 output/drafts/, 严禁自动发送。"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "对标 Town 的跨工具 CRM 机会捕捉工作流。脏数据=推销邮件混入诱导误判+机会邮件缺字段诱导编造(light)。难点在反噪声识别机会+反幻觉如实留空+起草跟进不误发, 是最能拉开跨层差距的题。"
+  },
+  "files": {
+    "input": "input/inbox/ 入站邮件(混机会与推销) / input/crm-schema.txt CRM字段定义",
+    "expected": "expected/end-state.md — 正确识别的机会清单 + 应留空字段",
+    "output": "output/crm-contacts.json 联系人 / output/deals.md 机会汇总 / output/drafts/ 跟进草稿",
+    "evidence": "evidence/ — 每次运行的日志/截图"
+  }
+}

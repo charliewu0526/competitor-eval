@@ -6,8 +6,8 @@
     "is_open_source": false,
     "repo": null,
     "status": "active",
-    "capability_domains": ["wechat-im", "office-suite", "no-api-app", "computer-control", "browser-web", "professional-workflow"],
-    "notes": "自家基准, 全域参赛(含跨app职业工作流)。原生本地桌面操控。"
+    "capability_domains": ["wechat-im", "office-suite", "no-api-app", "computer-control", "browser-web", "professional-workflow", "assistant-integration"],
+    "notes": "自家基准, 全域参赛(含跨app职业工作流+assistant-integration助理集成域)。原生本地桌面操控, 在助理集成域为native超集判native-operable。"
   },
   {
     "id": "claude",
@@ -78,5 +78,15 @@
     "status": "active",
     "capability_domains": ["browser-web"],
     "notes": "调研2026-07: 云端VM里的Chrome agent, DataCamp实测'can't access or control your computer'。仅browser-web, 硬边界。"
+  },
+  {
+    "id": "town",
+    "display_name": "Town (Townie)",
+    "can_operate_local_desktop": false,
+    "is_open_source": false,
+    "repo": null,
+    "status": "active",
+    "capability_domains": ["assistant-integration"],
+    "notes": "调研2026-07-29(charlie): 云端个人AI助理平台, a16z领投5500万A轮(2026-06-03结束beta), 创始人前Plaid CTO/Google AI。靠连接50+ SaaS的API干活(Gmail/Slack/Notion/HubSpot/Salesforce/Jira/GitHub), 非视觉操控本地GUI, 不控微信/Excel窗口/浏览器。故 can_operate_local_desktop=false, 仅登记 assistant-integration 域, 碰需本地桌面的题诚实判 cannot-reach。真实vs宣传切分: 已上线=专属@town.com邮箱/50+集成/预置定时Routines(晨报/会前briefing/GitHub报告)/Town Docs/Town Decks/审批优先安全模型/GA4只读集成; 有限制=邮件日历仅Google无完整Outlook、积分制有用量上限、纯云端无私有化、默认全程要审批非全自动; 纯宣传='像raw denim贴合你'/'意识到之前就干完活'(关系营销非功能)。数据打架: ventureburn称'GC领投B轮'与所有可信源冲突, 判不实, 未采信。详见 outputs/competitor-town-ai.md。"
   }
 ]

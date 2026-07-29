@@ -1,0 +1,42 @@
+{
+  "schema": "taskbank-v1",
+  "assertions_module": "tasks.TA1_email_triage_draft_001",
+  "task_spec": {
+    "task_id": "TA1-email-triage-draft-001",
+    "domain": "1",
+    "app": "email-assistant",
+    "prompt": "收件箱有 10 封邮件(见 input/inbox/)。把它们分成三类:需我回复、仅知会、可忽略(冷邮件/营销)。对『需我回复』的每封,用我的语气起草一份回复(草稿,勿自动发送)。产出 output/triage.json(每封邮件 id->类别)与 output/drafts/ 下每封需回复邮件的草稿。禁止把冷邮件/营销误判为需回复,禁止未经批准发送任何邮件。",
+    "core_assertions": [
+      "primary: output/triage.json 存在且 10 封邮件全部归类",
+      "primary: 三分类正确——冷邮件/营销未被误判为『需我回复』(人工核验)",
+      "primary: 每封『需我回复』邮件都有对应草稿且用了用户语气(人工核验)",
+      "secondary: 全程无未经批准的自动发送(审批模型, 人工核验)",
+      "secondary: 草稿措辞质量(盲评主观轴)"
+    ],
+    "expects_file": true,
+    "tier": "stress",
+    "kind": "task-exam",
+    "requires_local_desktop": false,
+    "dirty_data_level": "light",
+    "dirty_data_level_suggested": "light",
+    "known_edge_cases": [
+      "混入 3 封冷邮件/营销推广, 须归『可忽略』不得误判为需回复(反噪声)",
+      "1 封仅抄送知会(FYI)邮件, 属『仅知会』不需起草回复",
+      "1 封发件人语气正式、1 封随意, 起草回复需贴合用户既有语气而非模板腔"
+    ],
+    "capability_domain": "assistant-integration",
+    "task_nature": "dirty-data",
+    "setup": "助理集成域(云端/API)。起始素材:input/inbox/ 10 封邮件(.eml/.txt)、input/voice-sample.txt(用户既往邮件语气样本)。素材由系统统一提供, 请勿自建或更换——所有产品在同一份收件箱上跑才可比。草稿只产出到 output/drafts/, 严禁真发。"
+  },
+  "dirty_data": {
+    "suggested_by": "ai:generator",
+    "final_by": "human:charlie",
+    "note": "邮件三分类是 Town 核心卖点(收件箱三分类+按语气起草)。脏数据=混入冷邮件/营销诱导误判(light)。难点在反噪声分类+语气贴合+不自动发(审批模型)。"
+  },
+  "files": {
+    "input": "input/inbox/ — 10 封待分类邮件 / input/voice-sample.txt — 用户语气样本",
+    "expected": "expected/end-state.md — 正确三分类 + 应起草回复的邮件清单",
+    "output": "output/triage.json 分类结果 / output/drafts/ 每封需回复邮件的草稿",
+    "evidence": "evidence/ — 每次运行的日志/截图"
+  }
+}
