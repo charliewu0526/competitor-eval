@@ -82,14 +82,19 @@ _FORBIDDEN_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p) for p in (
     r"(?i)(^|/)\.github/",
 ))
 
-# 低危白名单: 前端组件/页面/样式/文案/纯展示逻辑 —— 错了也只是界面坏。
+# 低危白名单: 前端展示层 —— 错了也只是界面坏, 不伤数据/安全/部署。
 # 只有全部改动都命中这里才放行自动补丁。
+# 放宽 (2026-07-30): 原白名单只列 pages/components/css/glossary, 把 App.jsx(根布局/
+# 路由/菜单)、main.jsx、api.js 等 frontend/src 下的展示层文件都当灰区"未知即拒",
+# 导致大量本可自动修的前端 bug(如"边栏跟随下滑"要改 App.jsx)被挡下转人工。
+# 现放宽为: frontend/src 下的 .jsx/.js/.ts/.tsx/样式 一律低危 —— 前端整体是展示层,
+# 改坏顶多界面坏, 有前端构建闸兜底。**唯一例外 auth.jsx 已在硬禁区**(禁区优先级
+# 高于白名单, is_low_risk 里先查禁区), 故放宽不会松动鉴权边界。后端 .py 仍是灰区
+# (未知即拒), 硬禁区(鉴权/schema/脱敏/删数据/secrets/部署)一字未动。
 _LOWRISK_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p) for p in (
-    r"(^|/)frontend/src/pages/[^/]+\.jsx$",   # 页面
-    r"(^|/)frontend/src/components/",          # 组件
+    r"(^|/)frontend/src/.*\.(jsx?|tsx?)$",     # 前端展示层脚本(页面/组件/App/路由/api 等)
     r"(?i)\.(css|scss|less)$",                 # 样式
-    r"(^|/)frontend/src/glossary\.jsx$",       # 文案词汇表
-    r"(^|/)frontend/src/.*copy.*\.(js|jsx)$",  # 文案文件
+    r"(^|/)frontend/(index\.html|.*\.(json))$",  # 前端入口 html / 配置 json(展示层)
 ))
 
 

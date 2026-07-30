@@ -39,9 +39,22 @@ class ScopeClassification(unittest.TestCase):
         for f in ("frontend/src/pages/Leaderboard.jsx",
                   "frontend/src/components/Chart.jsx",
                   "frontend/src/index.css",
-                  "frontend/src/glossary.jsx"):
+                  "frontend/src/glossary.jsx",
+                  # 放宽 (2026-07-30): 前端展示层整体低危 —— App.jsx(根布局/路由/菜单)、
+                  # main.jsx(入口)、api.js(前端请求封装)不再是灰区。
+                  "frontend/src/App.jsx",
+                  "frontend/src/main.jsx",
+                  "frontend/src/api.js"):
             self.assertTrue(RA.is_low_risk(f), f)
             self.assertFalse(RA.is_forbidden(f), f)
+
+    def test_frontend_auth_still_forbidden_after_loosening(self):
+        # 放宽白名单后仍须守住: auth.jsx 是鉴权入口, 禁区优先级高于低危白名单,
+        # 绝不因"前端展示层整体低危"而被放行。
+        self.assertTrue(RA.is_forbidden("frontend/src/auth.jsx"))
+        self.assertFalse(RA.is_low_risk("frontend/src/auth.jsx"))
+        v = RA.classify_scope(["frontend/src/App.jsx", "frontend/src/auth.jsx"])
+        self.assertEqual(v["verdict"], "forbidden")   # 混入鉴权文件 -> 整批拒
 
     def test_forbidden_files_blocked(self):
         for f in ("pipeline/auth.py", "pipeline/rbac.py",
