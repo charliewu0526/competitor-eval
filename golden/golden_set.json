@@ -69,7 +69,8 @@
       "scored": true,
       "sample_score": 1.0,
       "h1": 5
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-success-02",
@@ -141,7 +142,8 @@
       "scored": true,
       "sample_score": 0.75,
       "h1": 5
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-success-03",
@@ -213,7 +215,8 @@
       "scored": true,
       "sample_score": 0.5,
       "h1": 5
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-success-04",
@@ -285,7 +288,8 @@
       "scored": true,
       "sample_score": 1.0,
       "h1": 5
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-success-05",
@@ -357,7 +361,8 @@
       "scored": true,
       "sample_score": 0.5,
       "h1": 5
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-success-06",
@@ -432,7 +437,8 @@
       "sample_score": 0.75,
       "h1": 5,
       "defects": 1
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-failure-01",
@@ -505,7 +511,8 @@
       "sample_score": 0.0,
       "h1": 4,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-failure-02",
@@ -578,7 +585,8 @@
       "sample_score": 0.0,
       "h1": 4,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-failure-03",
@@ -651,7 +659,8 @@
       "sample_score": 0.0,
       "h1": 4,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-failure-04",
@@ -724,7 +733,8 @@
       "sample_score": 0.0,
       "h1": 4,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-failure-05",
@@ -797,7 +807,8 @@
       "sample_score": 0.0,
       "h1": 4,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-failure-06",
@@ -870,7 +881,8 @@
       "sample_score": 0.0,
       "h1": 4,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-lied-01",
@@ -943,7 +955,8 @@
       "sample_score": 0.0,
       "h1": 1,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-lied-02",
@@ -1016,7 +1029,8 @@
       "sample_score": 0.0,
       "h1": 1,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-lied-03",
@@ -1089,7 +1103,8 @@
       "sample_score": 0.0,
       "h1": 1,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-lied-04",
@@ -1162,7 +1177,8 @@
       "sample_score": 0.0,
       "h1": 1,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-lied-05",
@@ -1235,7 +1251,8 @@
       "sample_score": 0.0,
       "h1": 1,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-lied-06",
@@ -1308,7 +1325,8 @@
       "sample_score": 0.0,
       "h1": 1,
       "subjective_none": true
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-amb-01",
@@ -1382,7 +1400,8 @@
       "flagged": [
         "S1"
       ]
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-amb-02",
@@ -1454,7 +1473,8 @@
       "scored": true,
       "sample_score": 0.75,
       "h1": 3
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-amb-03",
@@ -1526,7 +1546,8 @@
       "scored": true,
       "sample_score": 0.75,
       "h1": null
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-amb-04",
@@ -1599,7 +1620,8 @@
       "reason": "cannot-reach",
       "sample_score": null,
       "h1": 1
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-amb-05",
@@ -1671,7 +1693,8 @@
       "scored": true,
       "cross_layer": true,
       "h1": 5
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   },
   {
     "id": "G-amb-06",
@@ -1730,6 +1753,7 @@
         "S2",
         "S3"
       ]
-    }
+    },
+    "provenance": "synthetic-handcrafted"
   }
 ]

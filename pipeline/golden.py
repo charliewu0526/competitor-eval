@@ -76,10 +76,17 @@ def _run(gate="native-operable", passed=3, total=3, primary_fail=False,
                 screenshots=list(screenshots or []))
 
 
-def _s(id, category, title, run, panel, expected):
+def _s(id, category, title, run, panel, expected,
+       provenance="synthetic-handcrafted"):
+    """One golden sample. `provenance` records where it came from:
+      synthetic-handcrafted — the original hand-built spectrum anchors (default).
+      real-trace            — mined from a real, human-confirmed production run
+                              (backfilled over time to close the synthetic gap).
+    """
     assert category in CATEGORIES, category
     return {"id": id, "category": category, "title": title,
-            "run": run, "panel": panel, "expected": expected}
+            "run": run, "panel": panel, "expected": expected,
+            "provenance": provenance}
 
 
 # ============================================================================
@@ -252,9 +259,57 @@ SAMPLES: list[dict] = [
 # ---------------------------------------------------------------------------
 # Loaders + the seam runner.
 # ---------------------------------------------------------------------------
-def load_samples() -> list[dict]:
-    """Return the in-code golden set (the authoritative source)."""
-    return SAMPLES
+REAL_TRACE_DIR = ROOT / "golden" / "real_traces"
+
+
+def load_real_trace_samples(directory=REAL_TRACE_DIR) -> list[dict]:
+    """Load real-trace golden samples from a directory of per-sample JSON files.
+
+    Each file is one sample in the SAME schema as an in-code SAMPLE (id /
+    category / title / run / panel / expected), representing a REAL production
+    run whose label a human confirmed. provenance is forced to 'real-trace' so
+    the origin is never ambiguous. Missing dir -> [] (mechanism ready, data
+    backfilled over time). ids must be unique and not collide with SAMPLES.
+    """
+    d = pathlib.Path(directory)
+    if not d.is_dir():
+        return []
+    out = []
+    for fp in sorted(d.glob("*.json")):
+        s = json.loads(fp.read_text())
+        assert s.get("category") in CATEGORIES, f"{fp}: bad category"
+        for key in ("id", "run", "panel", "expected"):
+            assert key in s, f"{fp}: missing {key!r}"
+        s["provenance"] = "real-trace"
+        s.setdefault("title", s["id"])
+        out.append(s)
+    return out
+
+
+def load_samples(*, include_real_traces: bool = False,
+                 real_trace_dir=REAL_TRACE_DIR) -> list[dict]:
+    """Return the golden set (the authoritative source).
+
+    By default: the in-code hand-built spectrum (stable, offline, deterministic).
+    include_real_traces=True merges any backfilled real-trace samples on top —
+    ids are de-duplicated (in-code wins on collision) so the synthetic anchors
+    are never silently replaced.
+    """
+    if not include_real_traces:
+        return SAMPLES
+    seen = {s["id"] for s in SAMPLES}
+    extra = [s for s in load_real_trace_samples(real_trace_dir)
+             if s["id"] not in seen]
+    return SAMPLES + extra
+
+
+def provenance_counts(samples=None) -> dict:
+    samples = samples if samples is not None else SAMPLES
+    out: dict = {}
+    for s in samples:
+        out[s.get("provenance", "synthetic-handcrafted")] = \
+            out.get(s.get("provenance", "synthetic-handcrafted"), 0) + 1
+    return out
 
 
 def load_from_json(path=GOLDEN_JSON) -> list[dict]:

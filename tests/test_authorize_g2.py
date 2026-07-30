@@ -139,16 +139,36 @@ class Recalibrate(unittest.TestCase):
         self.assertEqual(got["status"], "authorized")
         self.assertEqual(got["n_samples"], rec["n_samples"])
 
-    def test_no_hard_threshold_even_low_kappa_authorizes(self):
-        # a DELIBERATELY bad verifier (always fail) has poor kappa, yet v1 still
-        # authorizes — only records. (ADR-0011: observe before setting a line.)
+    def test_graded_threshold_low_kappa_rejected(self):
+        # ADR-0011 v2: kappa now GATES the status (lenient 0.4/0.2 tiers). A
+        # DELIBERATELY bad verifier (always fail -> poor kappa) must NOT be
+        # authorized — it is graded 'rejected' (退回人工). (v1 used to authorize
+        # unconditionally; that漏洞 is now closed.)
         con = _mem_db()
         always_fail = lambda s: False
         rec = AU.recalibrate(con, role="verifier", name="claude",
                              members=["claude-opus-4"], verify_fn=always_fail)
-        self.assertEqual(rec["status"], "authorized")
-        # kappa recorded (may be <=0 or None), but NOT used to block
+        self.assertEqual(rec["status"], "rejected")
+        # kappa + weighted kappa + CI are all recorded for observation
         self.assertIn("kappa", rec)
+        self.assertIn("weighted_kappa", rec)
+        self.assertIn("kappa_ci_low", rec)
+
+    def test_grade_tiers_map_kappa_to_status(self):
+        self.assertEqual(AU.grade_authorization(0.7), "authorized")
+        self.assertEqual(AU.grade_authorization(0.4), "authorized")
+        self.assertEqual(AU.grade_authorization(0.3), "observe")
+        self.assertEqual(AU.grade_authorization(0.2), "observe")
+        self.assertEqual(AU.grade_authorization(0.1), "rejected")
+        self.assertEqual(AU.grade_authorization(None), "observe")
+
+    def test_oracle_verifier_authorized(self):
+        # a well-behaved (oracle) verifier clears the bar -> authorized.
+        con = _mem_db()
+        oracle = lambda s: s["category"] == "success"
+        rec = AU.recalibrate(con, role="verifier", name="claude",
+                             members=["claude-opus-4"], verify_fn=oracle)
+        self.assertEqual(rec["status"], "authorized")
 
     def test_bias_profile_persisted_recorded_only(self):
         con = _mem_db()

@@ -66,6 +66,13 @@ CREATE TABLE IF NOT EXISTS scores (
     competitor_version   TEXT,               -- ADR-0017 数据新鲜度: 竞品版本/build 标识
     tested_at            REAL,               -- ADR-0017: 该次测试时间(epoch)
     stale                INTEGER DEFAULT 0,  -- ADR-0017: 超期标陈旧 0/1
+    -- 抽查三级闭环反哺 (人在抽查里对一次运行下的处置, 回写进榜单):
+    human_review_status  TEXT,               -- NULL(未处置) | suspect(存疑) | excluded(排除出榜) | overridden(owner改分)
+    review_note          TEXT,               -- 处置备注(人话, 给后来人看)
+    override_sample_score REAL,              -- owner 改分后的能力分(仅 overridden 时生效, 否则 NULL)
+    override_h1_honesty  INTEGER,            -- owner 改分后的诚实度(可选)
+    reviewed_by          TEXT,               -- 下处置的人 users.id
+    reviewed_ts          REAL,
     PRIMARY KEY (task_id, product, run_idx)
 );
 
@@ -90,8 +97,12 @@ CREATE TABLE IF NOT EXISTS findings (
 CREATE TABLE IF NOT EXISTS authorizations (
     subject              TEXT PRIMARY KEY,   -- "reviewer:panel" | "verifier:claude"
     role                 TEXT NOT NULL,      -- "reviewer" | "verifier"
-    status               TEXT NOT NULL,      -- authorized | revoked | uncalibrated
-    kappa                REAL,               -- Cohen's kappa vs human gold (recorded)
+    status               TEXT NOT NULL,      -- authorized | observe | rejected | revoked | uncalibrated (v2 graded)
+    kappa                REAL,               -- nominal Cohen's kappa vs human gold (recorded)
+    weighted_kappa       REAL,               -- ordinal weighted kappa (the grading number, v2)
+    grading_kappa        REAL,               -- the kappa the status was graded on (v2)
+    kappa_ci_low         REAL,               -- bootstrap 2.5th percentile (v2)
+    kappa_ci_high        REAL,               -- bootstrap 97.5th percentile (v2)
     agreement            REAL,               -- raw observed agreement (recorded)
     n_samples            INTEGER DEFAULT 0,
     model_fingerprint    TEXT,               -- panel members + model versions
@@ -498,6 +509,42 @@ def upsert_score(con: sqlite3.Connection, sc: dict) -> None:
     con.commit()
 
 
+def set_review_status(con: sqlite3.Connection, *, task_id: str, product: str,
+                      run_idx: int, status: str | None,
+                      note: str | None = None, by: str | None = None) -> None:
+    """抽查三级闭环反哺: 对一次运行的分数打「人在抽查里的处置」标记。
+
+    status: None(清除处置) | 'suspect'(存疑,保留在榜但打标) | 'excluded'(排除出榜)。
+    改分('overridden')不走这里, 走 apply_score_override(它还要写新分)。
+    仅更新处置字段, 不动机器算出的 sample_score/h1_honesty (改分才动)。
+    """
+    con.execute(
+        """UPDATE scores SET human_review_status=?, review_note=?,
+           reviewed_by=?, reviewed_ts=?
+           WHERE task_id=? AND product=? AND run_idx=?""",
+        (status, note, by, time.time(), task_id, product, run_idx))
+    con.commit()
+
+
+def apply_score_override(con: sqlite3.Connection, *, task_id: str, product: str,
+                         run_idx: int, sample_score: float | None,
+                         h1_honesty: int | None = None,
+                         note: str | None = None, by: str | None = None) -> None:
+    """owner 改分: 记 override 分 + 标 human_review_status='overridden'。
+
+    机器算的 sample_score 原样保留(审计留痕), 榜单消费时优先用 override_sample_score。
+    h1_honesty 可选一并改。只有 owner 能调(权限在策略层 review_queue.override_score 守)。
+    """
+    con.execute(
+        """UPDATE scores SET human_review_status='overridden',
+           override_sample_score=?, override_h1_honesty=?, review_note=?,
+           reviewed_by=?, reviewed_ts=?
+           WHERE task_id=? AND product=? AND run_idx=?""",
+        (sample_score, h1_honesty, note, by, time.time(),
+         task_id, product, run_idx))
+    con.commit()
+
+
 def upsert_finding(con: sqlite3.Connection, f) -> int:
     """Persist a Finding. Re-classify UPDATES machine fields but PRESERVES the
     PM-filled product_judgment/final_category (machine never overwrites human)."""
@@ -770,12 +817,17 @@ def upsert_authorization(con: sqlite3.Connection, a: dict) -> None:
     nothing here ever feeds back into a run's sample_score (ADR-0005/0011).
     """
     con.execute("""
-        INSERT INTO authorizations (subject, role, status, kappa, agreement,
-            n_samples, model_fingerprint, rubric_fingerprint, bias_profile_json,
-            confusion_json, calibrated_ts, revoked_reason)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO authorizations (subject, role, status, kappa,
+            weighted_kappa, grading_kappa, kappa_ci_low, kappa_ci_high,
+            agreement, n_samples, model_fingerprint, rubric_fingerprint,
+            bias_profile_json, confusion_json, calibrated_ts, revoked_reason)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(subject) DO UPDATE SET
             role=excluded.role, status=excluded.status, kappa=excluded.kappa,
+            weighted_kappa=excluded.weighted_kappa,
+            grading_kappa=excluded.grading_kappa,
+            kappa_ci_low=excluded.kappa_ci_low,
+            kappa_ci_high=excluded.kappa_ci_high,
             agreement=excluded.agreement, n_samples=excluded.n_samples,
             model_fingerprint=excluded.model_fingerprint,
             rubric_fingerprint=excluded.rubric_fingerprint,
@@ -784,6 +836,8 @@ def upsert_authorization(con: sqlite3.Connection, a: dict) -> None:
             calibrated_ts=excluded.calibrated_ts,
             revoked_reason=excluded.revoked_reason
     """, (a["subject"], a["role"], a["status"], a.get("kappa"),
+          a.get("weighted_kappa"), a.get("grading_kappa"),
+          a.get("kappa_ci_low"), a.get("kappa_ci_high"),
           a.get("agreement"), a.get("n_samples", 0), a.get("model_fingerprint"),
           a.get("rubric_fingerprint"),
           json.dumps(a.get("bias_profile"), ensure_ascii=False),
