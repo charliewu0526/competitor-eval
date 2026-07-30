@@ -5,9 +5,11 @@ import {
 } from "antd";
 import {
   ReloadOutlined, PictureOutlined, FileTextOutlined,
-  CheckOutlined, CloseOutlined,
+  CheckOutlined, CloseOutlined, RedoOutlined, StopOutlined,
 } from "@ant-design/icons";
-import { getReportConsole, approveReport, rejectReport } from "../api";
+import {
+  getReportConsole, approveReport, rejectReport, closeReport, retryReport,
+} from "../api";
 
 // 反馈台按内部状态显示(owner 看得到全链路,不像提交者只见人话标签)。
 // needs-human / ai-failed 高亮为「优先处理」(story 20)。
@@ -107,6 +109,62 @@ export default function ReportConsole() {
     });
   }, [load]);
 
+  // needs-human / ai-failed 的人工处置:收口(标记已处理)或重派 AI 再试一次。
+  const doClose = useCallback((id) => {
+    let note = "";
+    Modal.confirm({
+      title: "标记已处理并关闭",
+      content: (
+        <div>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+            确认这条反馈已人工处理 / 无需处理 / 已线下解决后收口(离开优先队列)。
+            可留一句处置说明(记入诊断供追溯)。
+          </Typography.Paragraph>
+          <Input.TextArea rows={3} placeholder="例:素材已在后台更新,已线下修复"
+            onChange={(e) => { note = e.target.value; }} />
+        </div>
+      ),
+      okText: "标记已处理", cancelText: "取消",
+      onOk: async () => {
+        setActing(id);
+        try {
+          await closeReport(id, note);
+          antdMessage.success("已标记处理并关闭,通知提交者");
+          load();
+        } catch (e) {
+          antdMessage.error(e.userMessage || String(e));
+        } finally { setActing(null); }
+      },
+    });
+  }, [load]);
+
+  const doRetry = useCallback((id) => {
+    let note = "";
+    Modal.confirm({
+      title: "重派 AI 再试一次",
+      content: (
+        <div>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+            把这条反馈重新入队,让修复 Agent 按你的补充说明再试一次。
+          </Typography.Paragraph>
+          <Input.TextArea rows={3} placeholder="例:换个思路,改动 XX 模块而非 YY"
+            onChange={(e) => { note = e.target.value; }} />
+        </div>
+      ),
+      okText: "重派 AI", cancelText: "取消",
+      onOk: async () => {
+        setActing(id);
+        try {
+          await retryReport(id, note);
+          antdMessage.success("已重新入队,AI 将再试一次");
+          load();
+        } catch (e) {
+          antdMessage.error(e.userMessage || String(e));
+        } finally { setActing(null); }
+      },
+    });
+  }, [load]);
+
   const priorityCount = rows.filter((r) => PRIORITY.has(r.status)).length;
 
   const columns = [
@@ -141,21 +199,47 @@ export default function ReportConsole() {
       defaultSortOrder: "descend",
     },
     {
-      title: "上线闸门", key: "gate", width: 170,
-      render: (_, r) => (
-        r.status === "patch-ready" ? (
-          <Space>
-            <Button size="small" type="primary" icon={<CheckOutlined />}
-              loading={acting === r.id} onClick={() => doApprove(r.id)}>
-              批准上线
+      title: "处理", key: "gate", width: 210,
+      render: (_, r) => {
+        if (r.status === "patch-ready") {
+          return (
+            <Space>
+              <Button size="small" type="primary" icon={<CheckOutlined />}
+                loading={acting === r.id} onClick={() => doApprove(r.id)}>
+                批准上线
+              </Button>
+              <Button size="small" danger icon={<CloseOutlined />}
+                disabled={acting === r.id} onClick={() => doReject(r.id)}>
+                拒绝
+              </Button>
+            </Space>
+          );
+        }
+        // needs-human / ai-failed:人工处置入口(此前缺失,导致这些反馈卡死无法收口)。
+        if (r.status === "needs-human" || r.status === "ai-failed") {
+          return (
+            <Space>
+              <Button size="small" type="primary" icon={<CheckOutlined />}
+                loading={acting === r.id} onClick={() => doClose(r.id)}>
+                标记已处理
+              </Button>
+              <Button size="small" icon={<RedoOutlined />}
+                disabled={acting === r.id} onClick={() => doRetry(r.id)}>
+                重派 AI
+              </Button>
+            </Space>
+          );
+        }
+        if (r.status === "resolved") {
+          return (
+            <Button size="small" icon={<StopOutlined />}
+              loading={acting === r.id} onClick={() => doClose(r.id)}>
+              关闭
             </Button>
-            <Button size="small" danger icon={<CloseOutlined />}
-              disabled={acting === r.id} onClick={() => doReject(r.id)}>
-              拒绝
-            </Button>
-          </Space>
-        ) : <Typography.Text type="secondary">—</Typography.Text>
-      ),
+          );
+        }
+        return <Typography.Text type="secondary">—</Typography.Text>;
+      },
     },
   ];
 

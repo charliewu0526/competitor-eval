@@ -195,5 +195,10 @@ export const approveReport = (id, force = false) =>
 // 拒绝 → needs-human 附留言;retry=true 让 AI 按留言重试一次。
 export const rejectReport = (id, message, retry = false) =>
   api.post(`/reports/${id}/reject`, { message, retry }).then((r) => r.data);
+// needs-human / ai-failed 的人工处置:收口(closed)或重新入队让 AI 再试(queued)。
+export const closeReport = (id, note) =>
+  api.post(`/reports/${id}/close`, { note }).then((r) => r.data);
+export const retryReport = (id, note) =>
+  api.post(`/reports/${id}/retry`, { note }).then((r) => r.data);
 
 export default api;

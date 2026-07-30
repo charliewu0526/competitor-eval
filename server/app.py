@@ -1547,6 +1547,72 @@ def reject_report(report_id: str, body: RejectIn | None = None,
     return REPORTS.console_view(r)
 
 
+# === needs-human / ai-failed 的人工处置(补 UI 缺口)========================
+# 反馈台里 needs-human / ai-failed 是「优先处理」的红色高亮态, 但此前只有 patch-ready
+# 有 approve/reject 入口, 这两态在前端无任何人工操作按钮 —— 反馈卡死无法收口。
+# 状态机(reports._ALLOWED)本就允许 needs-human/ai-failed -> queued(让 AI 重试)
+# 与 -> closed(人工收口), 这里补上对应端点。owner 独占(approve_patch, 与审补丁同权)。
+
+class HumanResolveIn(BaseModel):
+    note: str | None = None   # 人工处置留言(记进诊断, 供追溯)。
+
+
+@app.post("/api/reports/{report_id}/close")
+def close_report(report_id: str, body: HumanResolveIn | None = None,
+                 user=rbac("approve_patch")):
+    """人工收口一条反馈 -> closed(终态)。合法来源: needs-human / ai-failed / resolved。
+
+    用于 owner 判定「已人工处理 / 无需处理 / 已线下解决」时把反馈关掉, 让它离开
+    优先处理队列。非法来源(如 queued 处理中)-> 409。留言记进 diagnosis 供追溯。
+    """
+    note = body.note if body else None
+    con = _con()
+    try:
+        cur = REPORTS.get(con, report_id)
+        # 顺带把人工留言落进 diagnosis(仅当来源允许写该产出列)。
+        if note and cur.get("status") in ("needs-human", "ai-failed"):
+            try:
+                store.set_user_report_status(
+                    con, report_id, cur["status"], expected_from=cur["status"],
+                    fields={"diagnosis": ((cur.get("diagnosis") or "") +
+                            f"\n[人工留言] {note}").strip()})
+            except Exception:
+                pass
+        r = REPORTS.close(con, report_id)
+    except REPORTS.IllegalTransition as e:
+        raise HTTPException(409, str(e))
+    except REPORTS.ReportError as e:
+        raise HTTPException(404, str(e))
+    return REPORTS.console_view(r)
+
+
+@app.post("/api/reports/{report_id}/retry")
+def retry_report(report_id: str, body: HumanResolveIn | None = None,
+                 user=rbac("approve_patch")):
+    """把 needs-human / ai-failed 的反馈重新入队 -> queued, 让修复 Agent 再试一次。
+
+    与「拒绝补丁 + 重试」共用重排队语义, 但入口是这两个卡住的态。非法来源 -> 409。
+    """
+    note = body.note if body else None
+    con = _con()
+    try:
+        cur = REPORTS.get(con, report_id)
+        if note and cur.get("status") in ("needs-human", "ai-failed"):
+            try:
+                store.set_user_report_status(
+                    con, report_id, cur["status"], expected_from=cur["status"],
+                    fields={"diagnosis": ((cur.get("diagnosis") or "") +
+                            f"\n[人工重试留言] {note}").strip()})
+            except Exception:
+                pass
+        r = REPORTS.enqueue(con, report_id)
+    except REPORTS.IllegalTransition as e:
+        raise HTTPException(409, str(e))
+    except REPORTS.ReportError as e:
+        raise HTTPException(404, str(e))
+    return REPORTS.console_view(r)
+
+
 # --- 静态前端 (build -> serve 接缝) --------------------------------------
 # 所有 API 都在 /api/* 前缀下(上方 44 个路由)。这里把 vite build 产物挂在根路径,
 # 让 uvicorn 单端口(8600)同时出 API + 站点 —— cloudflared 只需暴露这一个口。
