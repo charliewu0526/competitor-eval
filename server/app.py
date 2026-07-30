@@ -1766,7 +1766,38 @@ def report_console(user=rbac("view_report_console")):
                 u = store.get_user(con, sub)
                 _name_cache[sub] = (u.get("name") if u and u.get("name") else sub)
             row["submitter_name"] = _name_cache[sub]
+        # 把候选补丁 diff 全文读出来直接给 owner(像看 PR 的 Files changed), 免得
+        # 只给一个磁盘路径没法审。文件缺失/过大都如实降级, 不阻塞反馈台加载。
+        row["diff_text"] = _read_diff_text(row.get("diff_ref"))
     return rows
+
+
+_DIFF_MAX_BYTES = 200_000   # 超大 diff 截断, 防反馈台一行拖垮整页(极少见)。
+
+
+def _read_diff_text(diff_ref):
+    """读 diff_ref 指向的补丁文件为文本(owner 审 PR 用)。
+
+    diff_ref 是 board/repair-diffs/<id>.diff 的路径(repair_runner 落盘)。无引用/
+    文件不存在 -> None(前端显示"尚无补丁");读失败/过大 -> 附一句人话说明, 不抛错。
+    """
+    if not diff_ref:
+        return None
+    try:
+        import pathlib as _pl
+        _root = _pl.Path(__file__).resolve().parent.parent
+        p = _pl.Path(diff_ref)
+        if not p.is_absolute():
+            p = (_root / diff_ref)
+        if not p.is_file():
+            return None
+        data = p.read_bytes()
+        if len(data) > _DIFF_MAX_BYTES:
+            head = data[:_DIFF_MAX_BYTES].decode("utf-8", "replace")
+            return head + f"\n\n… (diff 过大, 已截断; 完整见 {diff_ref})"
+        return data.decode("utf-8", "replace")
+    except Exception as e:
+        return f"(读取 diff 失败: {e})"
 
 
 # === MR-D (#59) 上线闸门: 批准(冒烟金丝雀+回滚+安静窗口)/ 拒绝 ==============

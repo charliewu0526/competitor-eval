@@ -73,8 +73,8 @@ _ALLOWED: dict[str, frozenset[str]] = {
 # 流转时允许顺带落地的产出列白名单 (哪些列可由状态机流转写入)。是一张平表, 不按
 # 目标态细分 —— 各具名流转函数 (start_ai/mark_patch_ready/... ) 自行决定在哪个态填
 # 哪个字段; 此白名单只兜底挡住写入非产出列 (如 id/status/submitter 不该走这里改)。
-_WRITABLE_FIELDS = {"branch_name", "diagnosis", "diff_ref", "test_result",
-                    "good_commit", "resolved_ts"}
+_WRITABLE_FIELDS = {"branch_name", "diagnosis", "diff_ref", "patch_summary",
+                    "test_result", "good_commit", "resolved_ts"}
 
 
 class ReportError(Exception):
@@ -172,17 +172,25 @@ def start_ai(con, report_id: str, *, branch_name: str | None = None,
 
 
 def mark_patch_ready(con, report_id: str, *, diff_ref: str | None = None,
-                     test_result: str | None = None, **kw) -> dict:
-    """ai-working -> patch-ready: 低危 diff + 冒烟过, 附 diff/测试结果 (C), 等 owner 审。
+                     test_result: str | None = None,
+                     patch_summary: str | None = None, **kw) -> dict:
+    """ai-working -> patch-ready: 低危 diff + 冒烟过, 附「PR 描述」+ diff + 测试结果 (C), 等 owner 审。
 
-    patch-ready 是成功态: 顺带清掉上一轮 (needs-human/ai-failed 后重试) 残留的
+    这一步等价于「AI 提了一个 PR」:owner 是 reviewer。owner 展开一行看到的应像
+    一份 PR 描述 —— patch_summary 讲清 AI 改了什么/为什么/如何对应这条反馈, 配上
+    diff 全文和测试结果, owner 据此判断合不合理再决定批准(=merge)或拒绝。
+
+    patch-ready 是成功态: 顺带清掉上一轮 (needs-human/ai-failed 后重试) 残留的失败
     diagnosis —— 否则 owner 会在一份「已就绪」的补丁上看到旧的失败诊断, 被误导。
+    但 patch_summary 是这一版补丁的正向说明(PR 描述), 与失败 diagnosis 是两回事。
     """
     fields = dict(kw.pop("fields", {}) or {})
     if diff_ref is not None:
         fields["diff_ref"] = diff_ref
     if test_result is not None:
         fields["test_result"] = test_result
+    if patch_summary is not None:
+        fields["patch_summary"] = patch_summary
     fields.setdefault("diagnosis", None)   # 成功态清除旧失败诊断, 不误导 owner
     return transition(con, report_id, "patch-ready", fields=fields, **kw)
 

@@ -102,6 +102,24 @@ CREATE TABLE IF NOT EXISTS authorizations (
     revoked_reason       TEXT
 );
 
+CREATE TABLE IF NOT EXISTS authorization_history (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject              TEXT NOT NULL,      -- "reviewer:panel" | "verifier:claude"
+    role                 TEXT NOT NULL,
+    status               TEXT NOT NULL,      -- authorized | observe | rejected (v2 graded)
+    kappa                REAL,               -- nominal Cohen's kappa
+    weighted_kappa       REAL,               -- ordinal weighted kappa (grading number)
+    grading_kappa        REAL,               -- the kappa the status was graded on
+    kappa_ci_low         REAL,               -- bootstrap 2.5th percentile
+    kappa_ci_high        REAL,               -- bootstrap 97.5th percentile
+    agreement            REAL,
+    n_samples            INTEGER DEFAULT 0,
+    model_fingerprint    TEXT,
+    rubric_fingerprint   TEXT,
+    calibrated_ts        REAL,               -- append-only: one row per recalibrate, never overwritten
+    note                 TEXT
+);
+
 CREATE TABLE IF NOT EXISTS spot_check_queue (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id              TEXT NOT NULL,
@@ -221,6 +239,7 @@ CREATE TABLE IF NOT EXISTS user_report (
     branch_name          TEXT,               -- C: 修复 Agent 隔离 worktree 的分支名
     diagnosis            TEXT,               -- C: AI/人的诊断说明 (转人工时填)
     diff_ref             TEXT,               -- C: 候选补丁 diff 的路径引用 (走 artifact_store, 不入库)
+    patch_summary        TEXT,               -- C: AI 写给 owner 的"PR 描述"(改了什么/为什么/如何对应反馈), 供 owner 像审 PR 一样决定合不合
     test_result          TEXT,               -- C: Agent 跑过的测试结果摘要
     good_commit          TEXT,               -- D: 上线前的 good commit (金丝雀失败 checkout 回滚锚点)
     resolved_ts          REAL                -- D: 修复上线 (resolved) 的时间
@@ -798,6 +817,34 @@ def all_authorizations(con: sqlite3.Connection) -> list[dict]:
         "SELECT * FROM authorizations ORDER BY subject")]
 
 
+def append_authorization_history(con: sqlite3.Connection, a: dict) -> None:
+    """APPEND (never overwrite) one immutable calibration-history row.
+
+    Complements upsert_authorization (which keeps only the LATEST state): this
+    keeps every recalibration so kappa drift over time is visible. Additive-only.
+    """
+    con.execute("""
+        INSERT INTO authorization_history (subject, role, status, kappa,
+            weighted_kappa, grading_kappa, kappa_ci_low, kappa_ci_high,
+            agreement, n_samples, model_fingerprint, rubric_fingerprint,
+            calibrated_ts, note)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (a["subject"], a["role"], a["status"], a.get("kappa"),
+          a.get("weighted_kappa"), a.get("grading_kappa"),
+          a.get("kappa_ci_low"), a.get("kappa_ci_high"), a.get("agreement"),
+          a.get("n_samples", 0), a.get("model_fingerprint"),
+          a.get("rubric_fingerprint"), a.get("calibrated_ts"), a.get("note")))
+    con.commit()
+
+
+def get_authorization_history(con: sqlite3.Connection, subject: str,
+                              limit: int = 50) -> list[dict]:
+    """Calibration history for a subject, newest first (drift trend)."""
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM authorization_history WHERE subject=? "
+        "ORDER BY calibrated_ts DESC, id DESC LIMIT ?", (subject, limit))]
+
+
 # --- G3: spot-check queue -------------------------------------------------
 def enqueue_spot_check(con: sqlite3.Connection, *, task_id: str, product: str,
                        run_idx: int, stratum: str, reason: str) -> int:
@@ -1289,18 +1336,20 @@ def upsert_user_report(con, r: dict) -> None:
     """
     con.execute("""
         INSERT INTO user_report (id, submitter, status, text, created_ts,
-            updated_ts, branch_name, diagnosis, diff_ref, test_result,
-            good_commit, resolved_ts)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            updated_ts, branch_name, diagnosis, diff_ref, patch_summary,
+            test_result, good_commit, resolved_ts)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
             submitter=excluded.submitter, status=excluded.status,
             text=excluded.text, updated_ts=excluded.updated_ts,
             branch_name=excluded.branch_name, diagnosis=excluded.diagnosis,
-            diff_ref=excluded.diff_ref, test_result=excluded.test_result,
+            diff_ref=excluded.diff_ref, patch_summary=excluded.patch_summary,
+            test_result=excluded.test_result,
             good_commit=excluded.good_commit, resolved_ts=excluded.resolved_ts
     """, (r["id"], r["submitter"], r.get("status", "submitted"), r.get("text"),
           r.get("created_ts", time.time()), r.get("updated_ts", time.time()),
           r.get("branch_name"), r.get("diagnosis"), r.get("diff_ref"),
+          r.get("patch_summary"),
           r.get("test_result"), r.get("good_commit"), r.get("resolved_ts")))
     con.commit()
 
@@ -1323,8 +1372,8 @@ def set_user_report_status(con, report_id: str, status: str, *,
     列 (branch_name/diagnosis/diff_ref/test_result/good_commit/resolved_ts 白名单),
     updated_ts 每次流转自动刷新。命中 0 行 (守卫不满足或 id 不存在) -> False。
     """
-    allowed = {"branch_name", "diagnosis", "diff_ref", "test_result",
-               "good_commit", "resolved_ts"}
+    allowed = {"branch_name", "diagnosis", "diff_ref", "patch_summary",
+               "test_result", "good_commit", "resolved_ts"}
     sets = ["status=?", "updated_ts=?"]
     vals: list = [status, now if now is not None else time.time()]
     for k, v in (fields or {}).items():

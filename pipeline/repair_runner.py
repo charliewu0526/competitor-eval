@@ -201,6 +201,28 @@ def _real_changed_files(worktree: pathlib.Path) -> list[str]:
     return sorted(changed)
 
 
+def _build_patch_summary(diagnosis: str, changed: list[str], diff_text: str) -> str:
+    """把 AI 修复汇成一段「PR 描述」给 owner 审(AI 修复 == 提 PR, owner == reviewer)。
+
+    含三块, owner 一眼能判断修法对不对:
+      1. 修复说明 —— AI 的 --diagnosis(改了什么/为什么/如何对应这条反馈)。
+      2. 改动文件 —— 信 git 的真实改动清单(不是 AI 自报), 一行一个。
+      3. 改动规模 —— 从 unified diff 数 +增/-删 行数, 让 owner 先掂量补丁大小。
+    diff 全文不塞进这段描述(可能很长), 由 console 端点单独读 diff_ref 附上。
+    """
+    diag = (diagnosis or "").strip() or "(AI 未填写修复说明)"
+    added = sum(1 for ln in diff_text.splitlines()
+                if ln.startswith("+") and not ln.startswith("+++"))
+    removed = sum(1 for ln in diff_text.splitlines()
+                  if ln.startswith("-") and not ln.startswith("---"))
+    files = "\n".join(f"  - {f}" for f in changed) or "  (无)"
+    return (
+        f"## 修复说明\n{diag}\n\n"
+        f"## 改动文件({len(changed)} 个)\n{files}\n\n"
+        f"## 改动规模\n+{added} 行 / -{removed} 行"
+    )
+
+
 def _worktree_diff(worktree: pathlib.Path) -> str:
     """worktree 相对 HEAD 的完整补丁 (含新增文件), 排除 .repair_context.json。"""
     _git(worktree, "add", "-A")
@@ -306,6 +328,10 @@ def finalize(report_id: str, worktree: str, *, branch: str | None = None,
         diff_text = _worktree_diff(wt_path)
         diff_ref = RA._persist_diff(work=_Obj(path=str(wt_path)),
                                     report_id=report_id, diff=diff_text)
+        # 组「PR 描述」: 这一步等价于 AI 提了个 PR, owner 是 reviewer。把 AI 的诊断
+        # (改了什么/为什么)+ 真实改动文件清单 + 改动规模汇总成一段可读说明, owner
+        # 展开就能像审 PR 一样判断修法对不对, 无需去翻磁盘上的 diff 文件。
+        patch_summary = _build_patch_summary(diagnosis, changed, diff_text)
         # 对口闸: 修复 Agent 只改前端展示层 (ADR-0022), 故默认验证闸是前端构建,
         # 不是全量后端 pytest (跑不到点子上 + worktree 缺未跟踪 fixture 必失败)。
         runner = test_runner or (lambda: _frontend_build(wt_path))
@@ -313,6 +339,7 @@ def finalize(report_id: str, worktree: str, *, branch: str | None = None,
         if passed:
             result = reports.mark_patch_ready(
                 con, report_id, diff_ref=diff_ref,
+                patch_summary=patch_summary,
                 test_result=f"passed: {summary}")
         else:
             result = reports.mark_ai_failed(

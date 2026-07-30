@@ -118,12 +118,20 @@ class _Case(unittest.TestCase):
         out = self._claim()
         self._edit(out["worktree"], "frontend/src/pages/Leaderboard.jsx",
                    "export default function Leaderboard(){ return <div>fixed</div>; }\n")
-        fin = self._fin(rid, out, test_runner=lambda: (True, "3 passed"))
+        fin = self._fin(rid, out, test_runner=lambda: (True, "3 passed"),
+                        diagnosis="把榜单空态文案改成人话")
         self.assertEqual(fin["status"], "patch-ready")
         self.assertIsNotNone(fin["diff_ref"])
         self.assertTrue(pathlib.Path(fin["diff_ref"]).read_text().strip())
         row = R.get(self.con, rid)
         self.assertEqual(row["status"], "patch-ready")
+        # AI 修复 == 提 PR: patch_summary 是给 owner 审的「PR 描述」,须含 AI 的
+        # 修复说明 + 真实改动文件清单(信 git),owner 据此判断修法对不对。
+        summary = row["patch_summary"]
+        self.assertIsNotNone(summary)
+        self.assertIn("把榜单空态文案改成人话", summary)
+        self.assertIn("Leaderboard.jsx", summary)
+        self.assertIn("改动规模", summary)
         # worktree 被清理, 主临时仓工作树干净 (未污染)。
         self.assertFalse(pathlib.Path(out["worktree"]).exists())
         self.assertEqual(_git(self.repo, "status", "--porcelain").stdout, "")

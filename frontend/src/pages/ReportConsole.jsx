@@ -34,6 +34,23 @@ function fmtTs(ts) {
   try { return new Date(ts * 1000).toLocaleString(); } catch { return "—"; }
 }
 
+// 给 unified diff 上色:+增行绿、-删行红、@@ hunk 头蓝、diff/文件头灰,
+// 让 owner 像在 GitHub 审 PR 一样一眼看清改了哪几行。
+function colorizeDiff(text) {
+  const lines = String(text).split("\n");
+  const colorOf = (ln) => {
+    if (ln.startsWith("+++") || ln.startsWith("---")) return "#8b949e";
+    if (ln.startsWith("diff ") || ln.startsWith("index ")) return "#8b949e";
+    if (ln.startsWith("@@")) return "#a5d6ff";
+    if (ln.startsWith("+")) return "#3fb950";
+    if (ln.startsWith("-")) return "#f85149";
+    return "#e6edf3";
+  };
+  return lines.map((ln, i) => (
+    <div key={i} style={{ color: colorOf(ln) }}>{ln || " "}</div>
+  ));
+}
+
 export default function ReportConsole() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -246,29 +263,59 @@ export default function ReportConsole() {
     },
   ];
 
-  // 行展开:owner 可见 AI 起草的 diff / 跑过的测试 / 诊断(story 15)。
+  // 行展开:owner 像审一个 PR 一样看 AI 的修复 —— PR 描述(改了什么/为什么)+
+  // 完整 diff(Files changed)+ 测试结果,据此决定批准(=merge)还是拒绝(story 15)。
   const expandable = {
     expandedRowRender: (r) => (
-      <Descriptions size="small" column={1} bordered
-        style={{ maxWidth: 900 }}>
-        <Descriptions.Item label="诊断">
-          {r.diagnosis || <Typography.Text type="secondary">(无)</Typography.Text>}
-        </Descriptions.Item>
-        <Descriptions.Item label="候选补丁 diff">
-          {r.diff_ref
-            ? <Typography.Text code copyable>{r.diff_ref}</Typography.Text>
-            : <Typography.Text type="secondary">(尚无补丁)</Typography.Text>}
-        </Descriptions.Item>
-        <Descriptions.Item label="AI 跑过的测试">
-          {r.test_result || <Typography.Text type="secondary">(无)</Typography.Text>}
-        </Descriptions.Item>
-        <Descriptions.Item label="隔离分支">
-          {r.branch_name || "—"}
-        </Descriptions.Item>
-        <Descriptions.Item label="上线锚点 / 时间">
-          {(r.good_commit || "—") + "  ·  " + fmtTs(r.resolved_ts)}
-        </Descriptions.Item>
-      </Descriptions>
+      <div style={{ maxWidth: 1000 }}>
+        {r.status === "patch-ready" && (
+          <Alert type="info" showIcon style={{ marginBottom: 12 }}
+            message="这是 AI 提交的一个候选补丁(相当于一个 PR)"
+            description="下面是 AI 写的修复说明 + 改动全文。请像 review PR 一样判断修法是否正确,没问题就「批准上线」(等于合并 PR,会先过冒烟金丝雀),否则「拒绝」并留言。" />
+        )}
+        {/* PR 描述:AI 讲清改了什么、为什么、如何对应这条反馈 */}
+        <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 6 }}>
+          修复说明(AI 的 PR 描述)
+        </Typography.Title>
+        {r.patch_summary
+          ? <pre style={{
+              whiteSpace: "pre-wrap", background: "#f6f8fa", padding: 12,
+              borderRadius: 6, marginBottom: 12, fontSize: 13,
+            }}>{r.patch_summary}</pre>
+          : (
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              {r.diagnosis || "(AI 尚未产出修复说明)"}
+            </Typography.Paragraph>
+          )}
+
+        {/* Files changed:完整 diff 全文 */}
+        <Typography.Title level={5} style={{ marginBottom: 6 }}>
+          改动全文(diff)
+        </Typography.Title>
+        {r.diff_text
+          ? <pre style={{
+              whiteSpace: "pre", overflowX: "auto", background: "#0d1117",
+              color: "#e6edf3", padding: 12, borderRadius: 6, marginBottom: 12,
+              maxHeight: 460, overflowY: "auto", fontSize: 12.5, lineHeight: 1.5,
+            }}>{colorizeDiff(r.diff_text)}</pre>
+          : (
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              {r.diff_ref ? "(补丁文件已生成,但读取为空)" : "(尚无补丁 —— 该反馈可能还在处理或已转人工)"}
+            </Typography.Paragraph>
+          )}
+
+        <Descriptions size="small" column={2} bordered>
+          <Descriptions.Item label="AI 跑过的测试" span={2}>
+            {r.test_result || <Typography.Text type="secondary">(无)</Typography.Text>}
+          </Descriptions.Item>
+          <Descriptions.Item label="隔离分支">
+            {r.branch_name || "—"}
+          </Descriptions.Item>
+          <Descriptions.Item label="上线锚点 / 时间">
+            {(r.good_commit || "—") + "  ·  " + fmtTs(r.resolved_ts)}
+          </Descriptions.Item>
+        </Descriptions>
+      </div>
     ),
   };
 
