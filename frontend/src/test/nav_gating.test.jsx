@@ -3,10 +3,10 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-// 分级导航回归(charlie 拍板的三档):
-//   intern 实习生(6): 总览/任务清单/我的任务/方法沉淀/差距报告/排行榜
-//   reviewer 审核员(+7): 分维度/按题矩阵/评分详情/成本/发现看板/能力专项/抽查队列
-//   owner PM(+1): 黄金集授权
+// 分级导航回归(与 App.jsx NAV 单一真相源对齐, 2026-07-29 导航收拢后):
+//   intern 实习生(7): 总览/任务清单/我的任务/差距归因/方法沉淀/使用说明/意见反馈
+//   reviewer 审核员(+3): 竞品调研/评测明细/抽查队列
+//   owner PM(+3): 黄金集授权/用户管理/反馈台 —— 共 13 项
 // 验两层收敛: (1) 侧边栏只显示 <= 自己角色的页; (2) 路由守卫:直接进无权 path 被拦。
 const state = { user: { id: "u1", name: "小王", role: "intern" } };
 
@@ -43,9 +43,9 @@ vi.mock("../pages/Users.jsx", () => ({ default: () => <div data-testid="page-Use
 
 import App from "../App.jsx";
 
-const INTERN_ONLY = ["总览", "任务清单", "我的任务", "方法沉淀", "差距报告", "排行榜"];
-const REVIEWER_EXTRA = ["分维度榜单", "按题矩阵", "评分详情", "成本面板", "发现看板", "能力专项", "抽查队列"];
-const OWNER_EXTRA = ["黄金集授权", "用户管理"];
+const INTERN_ONLY = ["总览", "任务清单", "我的任务", "差距归因", "方法沉淀", "使用说明", "意见反馈"];
+const REVIEWER_EXTRA = ["竞品调研", "评测明细", "抽查队列"];
+const OWNER_EXTRA = ["黄金集授权", "用户管理", "反馈台"];
 
 function renderAt(path) {
   return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
@@ -54,7 +54,7 @@ function renderAt(path) {
 describe("分级导航:侧边栏按角色过滤", () => {
   beforeEach(() => { state.user = { id: "u1", name: "小王", role: "intern" }; });
 
-  it("intern 只看到 6 个菜单项,治理/分析页全不可见", async () => {
+  it("intern 只看到 7 个菜单项,治理/分析页全不可见", async () => {
     renderAt("/");
     await waitFor(() => expect(screen.getAllByText("总览").length).toBeGreaterThan(0));
     for (const label of INTERN_ONLY) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
@@ -73,7 +73,7 @@ describe("分级导航:侧边栏按角色过滤", () => {
     for (const label of OWNER_EXTRA) expect(screen.queryByText(label)).toBeNull();
   });
 
-  it("owner 看到全部 15 个菜单项", async () => {
+  it("owner 看到全部 13 个菜单项", async () => {
     state.user = { id: "owner1", name: "PM", role: "owner" };
     renderAt("/");
     await waitFor(() => expect(screen.getAllByText("用户管理").length).toBeGreaterThan(0));
