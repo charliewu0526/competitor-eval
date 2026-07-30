@@ -27,7 +27,6 @@ import time
 import uuid
 
 from pipeline import store
-from pipeline import assignments as ASSIGN
 from pipeline import intake as INTAKE
 from pipeline.intake import Submission
 

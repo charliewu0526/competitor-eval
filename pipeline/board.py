@@ -4,7 +4,7 @@ For T1 this is a single snapshot row. The trend/derivative view (across version
 events) is built out in T6; here we lay the schema so T6 just appends rows.
 """
 from __future__ import annotations
-import json, pathlib, datetime
+import pathlib, datetime
 
 
 def render_board(gap: dict, evals: list[dict], out_path: str,

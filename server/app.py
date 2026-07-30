@@ -10,6 +10,7 @@ Run:  uvicorn server.app:app --port 8600   (from repo root)
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from typing import Literal
 
@@ -35,7 +36,6 @@ from pipeline import registry as REG
 from pipeline import gap_report as GAP
 from pipeline import blind_panel as BP
 from pipeline import suite as SUITE
-from pipeline import intake as INTAKE
 from pipeline.intake import Submission as _IntakeSubmission
 from pipeline import reports as REPORTS
 from pipeline import canary as CANARY
@@ -226,7 +226,10 @@ def list_gap_report_tasks(baseline: str = "vio"):
     能看差距报告」+ 一行摘要(参赛产品数 / 大差距条数),供前端下拉选题。
     """
     con = _con()
-    scores = store.all_scores(con)
+    # 榜单隔离: auto-from-census 候选题(expected 为 AI 暂定基准、未核验)不进差距报告
+    # 主视图 —— 与 leaderboard/catalog 一致, 单列 /api/candidate-tasks。
+    cand_ids = LB.candidate_task_ids()
+    scores = [s for s in store.all_scores(con) if s.get("task_id") not in cand_ids]
     finds = store.all_findings(con)
     reg = REG.default_registry()
     task_ids = sorted({s.get("task_id") for s in scores if s.get("task_id")})
@@ -255,7 +258,11 @@ def get_gap_report(task_id: str, baseline: str = "vio", attribution: bool = Fals
     (前端手动触发兜底), 否则 attribution=null 让前端显示「分析」按钮。
     """
     con = _con()
-    scores = store.all_scores(con)
+    # 榜单隔离: 候选题(auto-from-census)不出差距报告主视图, 单列 /api/candidate-tasks。
+    cand_ids = LB.candidate_task_ids()
+    if task_id in cand_ids:
+        raise HTTPException(404, "no scores for this task")
+    scores = [s for s in store.all_scores(con) if s.get("task_id") not in cand_ids]
     finds = store.all_findings(con)
     if not any(s.get("task_id") == task_id for s in scores):
         raise HTTPException(404, "no scores for this task")
@@ -643,7 +650,6 @@ def _score_assignment_into_board(con, assignment_id: str) -> dict:
     失败(面板超时/密钥失效/任务无断言模块)只回报 status, 绝不阻塞收口 ——
     实习生已交的活不能因为评分环节抖动而回滚。
     """
-    import logging
     a = store.get_assignment(con, assignment_id)
     if a is None:
         return {"status": "skipped", "reason": "assignment 不存在"}
@@ -733,7 +739,6 @@ def _score_assignment_bg(assignment_id: str) -> None:
     半分钟以上, 拖垮前台。改为 BackgroundTask: 收口请求秒返 (状态已翻 submitted),
     评分在后台完成后落 runs/scores, 榜单随后出分。失败只记日志, 不影响已交付的活。
     """
-    import logging
     try:
         con = _con()
         _score_assignment_into_board(con, assignment_id)
@@ -1049,7 +1054,9 @@ def gap_report_overview(baseline: str = "vio"):
     没预跑缓存的题摘要为空(前端提示可点批量预跑)。
     """
     con = _con()
-    scores = store.all_scores(con)
+    # 榜单隔离: 候选题(auto-from-census)不进全任务差距一览, 单列 /api/candidate-tasks。
+    cand_ids = LB.candidate_task_ids()
+    scores = [s for s in store.all_scores(con) if s.get("task_id") not in cand_ids]
     finds = store.all_findings(con)
     cached = store.all_cached_attributions(con, baseline)
 

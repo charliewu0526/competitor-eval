@@ -24,8 +24,6 @@ import pathlib
 import re
 import time
 
-from pipeline import taskbank as TB
-
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TASKS_DIR = ROOT / "tasks"
 

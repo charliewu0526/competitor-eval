@@ -24,10 +24,10 @@ Agent 契约 (仿 review_fakes / intake_fakes: 生产实现与 fake 同契约, �
 """
 from __future__ import annotations
 
-import os
 import pathlib
 import re
 import subprocess
+import sys
 import time
 import uuid
 
@@ -232,7 +232,7 @@ def _run_tests(cwd: str, test_cmd=None) -> tuple[bool, str]:
     默认跑 pytest -q。测试用 fake worktree 时由调用方注入 test_runner 替身,
     不真起子进程。
     """
-    cmd = test_cmd or ["python", "-m", "pytest", "-q"]
+    cmd = test_cmd or [sys.executable, "-m", "pytest", "-q"]
     out = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
                          timeout=600)
     tail = (out.stdout or out.stderr).strip().splitlines()[-3:]

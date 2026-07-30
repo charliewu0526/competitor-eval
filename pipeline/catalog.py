@@ -16,7 +16,6 @@ from __future__ import annotations
 import pathlib
 
 from pipeline import suite as SUITE
-from pipeline import taskbank as TB
 from pipeline import gate as GATE
 from pipeline.registry import default_registry
 from pipeline.schema import CAPABILITY_DOMAIN_VALUES

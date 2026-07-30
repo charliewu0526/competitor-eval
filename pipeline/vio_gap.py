@@ -25,7 +25,7 @@ import os
 from dataclasses import dataclass, field, asdict
 
 from pipeline import gap_attribution as GA
-from pipeline.findings import make_finding, Finding
+from pipeline.findings import make_finding
 
 EXECUTION_GAP = "execution-gap"
 CAPABILITY_GAP = "capability-gap"

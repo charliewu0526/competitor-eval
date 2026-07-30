@@ -23,6 +23,7 @@ export default function Research() {
   const [result, setResult] = useState(null);
   const [candTasks, setCandTasks] = useState([]);
   const [candBusy, setCandBusy] = useState(false);
+  const [reviewing, setReviewing] = useState(null);   // 复核中的 capability(防二次发火)
 
   const loadCandidates = async () => {
     setCandBusy(true);
@@ -50,6 +51,8 @@ export default function Research() {
   };
 
   const doReview = async (capability, approve) => {
+    if (reviewing) return;                 // 防二次发火: 复核请求进行中不重复提交
+    setReviewing(capability);
     try {
       const r = await reviewCapability(product.trim(), capability, approve);
       if (approve && r.generated_task) {
@@ -65,7 +68,10 @@ export default function Research() {
         extracted: prev.extracted.map((e) =>
           e.capability === capability ? { ...e, status: approve ? "shipped" : "candidate" } : e),
       });
+      // 升 shipped 会自动生成候选题 -> 刷新下方候选题区(否则要手动点刷新才看得到)
+      if (approve && r.generated_task) loadCandidates();
     } catch (e) { message.error(e.userMessage || String(e)); }
+    finally { setReviewing(null); }
   };
 
   const cols = [
@@ -83,6 +89,8 @@ export default function Research() {
       render: (_, r) => r.status === "candidate" ? (
         <Space>
           <Button size="small" type="primary" icon={<CheckOutlined />}
+            loading={reviewing === r.capability}
+            disabled={reviewing !== null && reviewing !== r.capability}
             onClick={() => doReview(r.capability, true)}>确认</Button>
         </Space>
       ) : <Text type="secondary">—</Text> },

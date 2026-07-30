@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   Typography, Card, Tag, Spin, Alert, Empty, Button, Space, Input, message,
-  Modal, Form, Upload, Checkbox, Divider, List, Tooltip, Collapse,
+  Modal, Form, Upload, Checkbox, Divider, Tooltip, Collapse,
 } from "antd";
 import {
   InboxOutlined, UploadOutlined, SendOutlined, RollbackOutlined,

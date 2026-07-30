@@ -150,7 +150,7 @@ def build_queue(con, *, rate: float = NORMAL_RATE) -> dict:
         summary[stratum] += 1
         enqueued += 1
     return {"enqueued": enqueued, "by_stratum": summary,
-            "total_scored": len(scores)}
+            "total_scored": len(scores), "purged_stale": purged}
 
 
 def submit_verdict(con, queue_id: int, *, status: str,

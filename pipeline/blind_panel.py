@@ -24,7 +24,7 @@ orchestrate.score_run,脱敏复用 logview,标签复用 registry.blind_letter。
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from pipeline import orchestrate as ORCH
 from pipeline import intake as IN

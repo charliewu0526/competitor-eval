@@ -8,7 +8,7 @@ requires known_edge_cases.
 """
 from __future__ import annotations
 import json, time, pathlib
-from dataclasses import dataclass, field, asdict, fields as dc_fields
+from dataclasses import dataclass, field, asdict
 
 GATE_VALUES = ("native-operable", "api-or-integration", "cannot-reach")
 TIER_VALUES = ("core-common", "vio-key", "rival-signature", "stress")
