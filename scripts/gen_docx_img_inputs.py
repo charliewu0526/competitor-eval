@@ -7,7 +7,7 @@ python-docx 未装 -> 直接用 zipfile 写一个最小合法 .docx(OOXML 本质
 import pathlib
 import zipfile
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TASKS = ROOT / "tasks"
@@ -54,25 +54,80 @@ with zipfile.ZipFile(docx_path, "w", zipfile.ZIP_DEFLATED) as z:
 print("T8 contract-draft.docx 已生成")
 
 
-def _img(path: pathlib.Path, lines, size=(600, 400), bg=(245, 245, 245)):
+# 可读中英字体: Helvetica(拉丁) + STHeiti(中文)。缺字体时回退默认位图字体。
+def _load_font(size, *, cjk=False):
+    candidates = (
+        ["/System/Library/Fonts/STHeiti Medium.ttc",
+         "/System/Library/Fonts/PingFang.ttc"] if cjk else
+        ["/System/Library/Fonts/Helvetica.ttc",
+         "/System/Library/Fonts/Supplemental/Arial.ttf"])
+    for p in candidates:
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _img(path: pathlib.Path, lines, *, size=(700, 460), bg=(250, 250, 250),
+         blur=False):
+    """画一张收据图。lines=[(text, is_cjk, is_header)]。
+
+    blur=True: 故意做成模糊/缺字段的脏样本(该被 flag, 不该猜)。清晰样本字号大、
+    字段全(supplier/date/amount/currency/ref), 让每个可录收据都能被客观核验。
+    """
+    from PIL import ImageFilter
     path.parent.mkdir(parents=True, exist_ok=True)
     im = Image.new("RGB", size, bg)
     d = ImageDraw.Draw(im)
-    y = 30
-    for ln in lines:
-        d.text((30, y), ln, fill=(20, 20, 20))
-        y += 40
+    # 收据外框, 更像真实扫描件。
+    d.rectangle([12, 12, size[0] - 12, size[1] - 12], outline=(120, 120, 120), width=2)
+    y = 38
+    for item in lines:
+        # 兼容两种写法: 纯字符串(旧 T15 调用)或 (text, is_cjk, is_header) 元组。
+        if isinstance(item, str):
+            text, is_cjk, is_header = item, any(ord(c) > 127 for c in item), False
+        else:
+            text, is_cjk, is_header = item
+        fsize = 40 if is_header else 30
+        font = _load_font(fsize, cjk=is_cjk)
+        d.text((36, y), text, fill=(15, 15, 15), font=font)
+        y += 56 if is_header else 46
+    if blur:
+        # 轻度模糊 + 降对比, 模拟真实"拍糊/字迹不清"的不可辨认扫描件。
+        im = im.filter(ImageFilter.GaussianBlur(radius=2.4))
     im.save(path)
 
 
-# ---------- T14: 收据图(脏录入: 金额/日期需人读) ----------
-_img(TASKS / "T14-accounting-dirty-entry-001/input/receipts/receipt-01.png",
-     ["RECEIPT / 收据", "Date: 2025-07-03", "Item: 办公桌 x2", "Amount: ¥1,280.00", "No.0001"])
-_img(TASKS / "T14-accounting-dirty-entry-001/input/receipts/receipt-02.png",
-     ["收据", "日期: 2025/7/9", "餐饮招待", "金额: 860 元", "手写潦草-可辨"])
-_img(TASKS / "T14-accounting-dirty-entry-001/input/receipts/receipt-03.png",
-     ["INVOICE", "07-15-2025", "打车费", "USD 32.50", "#A-7788"])
-print("T14 receipts/*.png 已生成")
+# ---------- T14: 收据图(脏录入: 部分清晰可录, 一张模糊应被 flag) ----------
+_R = TASKS / "T14-accounting-dirty-entry-001/input/receipts"
+# receipt-01: 清晰、字段齐全(供应商/日期/用途/金额/币种/单号)—— 应被录入。
+_img(_R / "receipt-01.png", [
+    ("RECEIPT / 收据", False, True),
+    ("Supplier / 供应商: 宜家家居 (Beijing)", True, False),
+    ("Date / 日期: 2025-07-03", False, False),
+    ("Purpose / 用途: 办公桌 x2", True, False),
+    ("Amount / 金额: CNY 1,280.00", False, False),
+    ("Ref No. / 单号: No.0001", False, False),
+])
+# receipt-03: 清晰、字段齐全(英文发票)—— 应被录入。
+_img(_R / "receipt-03.png", [
+    ("INVOICE", False, True),
+    ("Supplier: City Taxi Co., Ltd.", False, False),
+    ("Date: 2025-07-15", False, False),
+    ("Purpose: Airport transfer (打车费)", True, False),
+    ("Amount: USD 32.50", False, False),
+    ("Ref No.: A-7788", False, False),
+])
+# receipt-02: 模糊 + 供应商/用途不可辨认 —— 这是"脏数据", 应被 flag 而非猜。
+_img(_R / "receipt-02.png", [
+    ("收据 (扫描不清)", True, True),
+    ("供应商: ▓▓▓▓ (字迹不清)", True, False),
+    ("日期: 2025/7/9", False, False),
+    ("用途: ▓▓▓▓", True, False),
+    ("金额: 860 (币种不明)", True, False),
+], blur=True)
+print("T14 receipts/*.png 已生成(01/03 清晰全字段, 02 模糊应 flag)")
 
 # ---------- T15: 待重命名的照片 ----------
 for i, name in enumerate(["IMG_0001.jpg", "IMG_0002.jpg", "IMG_0003.jpg",
