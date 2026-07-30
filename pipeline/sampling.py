@@ -153,27 +153,9 @@ def build_queue(con, *, rate: float = NORMAL_RATE) -> dict:
             "total_scored": len(scores), "purged_stale": purged}
 
 
-def submit_verdict(con, queue_id: int, *, status: str,
-                   checked_by: str | None = None,
-                   verdict_note: str | None = None,
-                   role: str | None = None, name: str | None = None,
-                   members=None) -> dict:
-    """Record a human spot-check verdict and, on 'anomaly', fire the G2
-    recalibration trigger for the named reviewer/verifier subject.
-
-    status: 'ok' (matches machine) | 'anomaly' (human disagrees → 重校准).
-    Returns {recorded: True, recalibration_triggered: bool, authorization?}.
-    """
-    if status not in ("ok", "anomaly"):
-        raise ValueError("status must be 'ok' or 'anomaly'")
-    store.record_spot_check(con, queue_id, status=status,
-                            checked_by=checked_by, verdict_note=verdict_note)
-    out = {"recorded": True, "recalibration_triggered": False}
-    if status == "anomaly" and role and name:
-        from pipeline import authorize
-        res = authorize.check_authorization(con, role=role, name=name,
-                                            members=members or [],
-                                            anomaly=True)
-        out["recalibration_triggered"] = not res["authorized"]
-        out["authorization"] = res
-    return out
+# 裁决收敛 (抽查体验重构): 旧版这里有个 submit_verdict(status='ok'|'anomaly') 简单
+# 那套, 已删除。所有人工裁决收敛到 pipeline/review_queue.py 单一机制:
+#   - submit_verdict(reasonable/problematic)  下「有道理/有问题」结论
+#   - mark_suspect / exclude_run / override_score  三级闭环反哺(存疑/排除/改分)
+#   - trigger_recalibration(owner)            「有问题」触发黄金集重校准
+# sampling.py 只负责「谁进队列 + 分层」(build_queue/classify_run), 不再管裁决。

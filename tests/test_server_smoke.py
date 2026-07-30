@@ -32,11 +32,15 @@ REQUIRED_ROUTES = {
     # 复核 / 抽查写端点 (鉴权动作)
     ("POST", "/api/findings/{finding_id}/judgment"),
     ("POST", "/api/spotcheck/rebuild"),
-    ("POST", "/api/spotcheck/{queue_id}/verdict"),
+    ("GET", "/api/spotcheck/{queue_id}/detail"),
     # MR-13 (#49) 人工复核队列 + 职责分离 + 重校准
     ("POST", "/api/spotcheck/{queue_id}/assign"),
     ("POST", "/api/spotcheck/{queue_id}/review"),
     ("POST", "/api/spotcheck/{queue_id}/recalibrate"),
+    # 抽查三级闭环反哺 (裁决收敛后的单一机制)
+    ("POST", "/api/spotcheck/{queue_id}/suspect"),
+    ("POST", "/api/spotcheck/{queue_id}/exclude"),
+    ("POST", "/api/spotcheck/{queue_id}/override"),
     # 用户管理 (MR-4 + 删除成员)
     ("GET", "/api/users"),
     ("POST", "/api/users/{user_id}/role"),

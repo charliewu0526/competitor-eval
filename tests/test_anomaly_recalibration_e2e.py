@@ -2,13 +2,14 @@
 
 The design (ADR-0011) says: spot-check finds a bad AI call -> fire the G2
 recalibration trigger -> the reviewer/verifier subject is REVOKED and must clear
-the golden set again. The wiring already exists in two places; this test proves
-BOTH paths truly cut authorization end-to-end (not just record a note):
+the golden set again.
 
-  Path A: sampling.submit_verdict(status="anomaly", role, name, members)
-          — the reviewer files a verdict; anomaly fires check_authorization.
+裁决收敛 (抽查体验重构): 旧的 Path A (sampling.submit_verdict status="anomaly")
+简单裁决那套已删除, 撤授权统一由 owner 独占的 review_queue.trigger_recalibration
+承担 (Path B)。本文件只保留 Path B 的端到端证明:
+
   Path B: review_queue.trigger_recalibration(owner) on an anomaly item
-          — the owner-only 危险开关; RBAC rejects intern/reviewer.
+          — the owner-only 危险开关; RBAC rejects intern/reviewer; 真撤授权。
 
 Run: python -m unittest tests.test_anomaly_recalibration_e2e -v
 """
@@ -17,7 +18,6 @@ import unittest
 
 from pipeline import authorize as AU
 from pipeline import store
-from pipeline import sampling
 from pipeline import review_queue as RQ
 from pipeline.rbac import PermissionDenied
 
@@ -35,54 +35,6 @@ def _enqueue_one(con):
     return store.enqueue_spot_check(
         con, task_id="T1", product="vio", run_idx=1,
         stratum="high-risk", reason="honesty flag")
-
-
-class PathA_SubmitVerdictAnomaly(unittest.TestCase):
-    def setUp(self):
-        self.con = _mem_db()
-        self.members = ["review_deepseek", "review_gemini"]
-        _authorize_reviewer(self.con, self.members)
-        self.qid = _enqueue_one(self.con)
-
-    def test_ok_verdict_does_not_revoke(self):
-        out = sampling.submit_verdict(
-            self.con, self.qid, status="ok", checked_by="rev1",
-            role="reviewer", name="panel", members=self.members)
-        self.assertFalse(out["recalibration_triggered"])
-        self.assertEqual(
-            store.get_authorization(self.con, "reviewer:panel")["status"],
-            "authorized")
-
-    def test_anomaly_verdict_revokes_authorization(self):
-        out = sampling.submit_verdict(
-            self.con, self.qid, status="anomaly", checked_by="rev1",
-            verdict_note="AI graded high, human says fail",
-            role="reviewer", name="panel", members=self.members)
-        # the trigger fired and authorization is gone
-        self.assertTrue(out["recalibration_triggered"])
-        self.assertFalse(out["authorization"]["authorized"])
-        self.assertEqual(out["authorization"]["status"], "revoked")
-        self.assertIn("anomaly", out["authorization"]["reason"])
-        # persisted revoke
-        rec = store.get_authorization(self.con, "reviewer:panel")
-        self.assertEqual(rec["status"], "revoked")
-        # the human verdict is recorded on the queue item
-        item = store.get_spot_check(self.con, self.qid)
-        self.assertEqual(item["status"], "anomaly")
-
-    def test_revoked_only_recovers_via_recalibration(self):
-        sampling.submit_verdict(
-            self.con, self.qid, status="anomaly", checked_by="rev1",
-            role="reviewer", name="panel", members=self.members)
-        # a plain check stays revoked
-        r = AU.check_authorization(self.con, role="reviewer", name="panel",
-                                   members=self.members)
-        self.assertFalse(r["authorized"])
-        # only recalibrating on the golden set restores it
-        _authorize_reviewer(self.con, self.members)
-        r2 = AU.check_authorization(self.con, role="reviewer", name="panel",
-                                    members=self.members)
-        self.assertTrue(r2["authorized"])
 
 
 class PathB_TriggerRecalibrationOwnerOnly(unittest.TestCase):

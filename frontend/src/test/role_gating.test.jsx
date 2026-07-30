@@ -16,7 +16,18 @@ vi.mock("../api", () => ({
       task_id: "T1", run_idx: 1, reason: "诚实存疑 H1=1" },
   ]),
   rebuildSpotcheck: vi.fn(async () => ({ enqueued: 1 })),
-  postVerdict: vi.fn(async () => ({})),
+  spotcheckDetail: vi.fn(async () => ({
+    objective: { passed: 2, total: 4, failed: 2, failed_primary: false, evidence_source: "artifact" },
+    score: { sample_score: 0.8, h1_honesty: 3, subjective: { S1: 4 }, defects: [], disagreement: [] },
+    run: { cost_usd: 0.1, cost_model_calls: 5 },
+    artifacts: [], expected: "",
+  })),
+  artifactUrl: (id, rel) => `/api/spotcheck/${id}/artifact/${rel}`,
+  reviewVerdict: vi.fn(async () => ({})),
+  markSuspect: vi.fn(async () => ({})),
+  excludeRun: vi.fn(async () => ({})),
+  clearReview: vi.fn(async () => ({})),
+  overrideScore: vi.fn(async () => ({})),
   // Findings: 一条未定判
   getFindings: vi.fn(async () => [
     { id: 1, suspected_category: "honesty-alert", subject: "open_interpreter",
@@ -53,14 +64,14 @@ describe("角色收敛: 复核/定判按钮按角色显隐", () => {
   it("SpotCheck: intern 看只读提示, 无复核按钮", async () => {
     render(<SpotCheck />);
     await waitFor(() => expect(screen.getByText(/抽查裁定由审核员\/PM 处理/)).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: /一致（机器判对了）|一致\(机器判对了\)/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /有道理/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /重建抽查队列/ })).not.toBeInTheDocument();
   });
 
   it("SpotCheck: reviewer 能看到复核按钮", async () => {
     state.user = { id: "rv1", name: "审核员", role: "reviewer" };
     render(<SpotCheck />);
-    await waitFor(() => expect(screen.getByRole("button", { name: /一致/ })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: /有道理/ })).toBeInTheDocument());
   });
 
   it("Findings: intern 看只读提示, 无保存按钮", async () => {

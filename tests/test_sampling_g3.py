@@ -141,7 +141,8 @@ class QueueBuild(unittest.TestCase):
         store.upsert_score(self.con, _score("T1", "rivalX", disagreement=["S2"]))
         SP.build_queue(self.con)
         qid = store.spot_check_queue(self.con)[0]["id"]
-        SP.submit_verdict(self.con, qid, status="ok", checked_by="PM")
+        # 裁决收敛: 直接写回队列裁决 (旧 SP.submit_verdict 已删, 裁决走 review_queue)。
+        store.record_spot_check(self.con, qid, status="ok", checked_by="PM")
         # rebuild should NOT clobber the human verdict back to pending
         SP.build_queue(self.con)
         # it's no longer pending, so it drops out of the pending listing
@@ -167,39 +168,10 @@ class AsyncDecoupling(unittest.TestCase):
         self.assertEqual(store.spot_check_queue(con), [])
 
 
-# =============================================================================
-# Verdict write-back -> G2 recalibration trigger.
-# =============================================================================
-class VerdictRecalibration(unittest.TestCase):
-    def setUp(self):
-        self.con = store.connect(_tmpdb())
-        store.upsert_score(self.con, _score("T1", "rivalX", disagreement=["S2"]))
-        SP.build_queue(self.con)
-        self.qid = store.spot_check_queue(self.con)[0]["id"]
-
-    def test_ok_verdict_no_recalibration(self):
-        out = SP.submit_verdict(self.con, self.qid, status="ok", checked_by="PM")
-        self.assertTrue(out["recorded"])
-        self.assertFalse(out["recalibration_triggered"])
-
-    def test_anomaly_revokes_authorized_subject(self):
-        # authorize a reviewer first, then an anomaly spot-check must revoke it.
-        members = ["deepseek", "gemini"]
-        AU.recalibrate(self.con, role="reviewer", name="panel", members=members,
-                       samples=golden.load_samples())
-        before = store.get_authorization(self.con, "reviewer:panel")
-        self.assertEqual(before["status"], "authorized")
-        out = SP.submit_verdict(self.con, self.qid, status="anomaly",
-                                checked_by="PM", role="reviewer", name="panel",
-                                members=members)
-        self.assertTrue(out["recalibration_triggered"])
-        after = store.get_authorization(self.con, "reviewer:panel")
-        self.assertEqual(after["status"], "revoked")
-        self.assertIn("anomaly", after["revoked_reason"])
-
-    def test_bad_status_rejected(self):
-        with self.assertRaises(ValueError):
-            SP.submit_verdict(self.con, self.qid, status="maybe")
+# 裁决收敛 (抽查体验重构): 旧 SP.submit_verdict + 「异常触发重校准」的用例已删除,
+# 迁移到 pipeline/review_queue.py 的单一裁决机制, 由 tests/test_review_queue_mr13.py
+# 覆盖 (submit_verdict reasonable/problematic + trigger_recalibration owner 独占)。
+# 本文件只保留 sampling 自己的职责: 采样 / 分层 / 队列构建 / 异步解耦。
 
 
 if __name__ == "__main__":

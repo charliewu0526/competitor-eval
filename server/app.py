@@ -380,21 +380,65 @@ def get_spotcheck(status: str | None = None):
     return store.spot_check_queue(_con(), status=status)
 
 
-@app.get("/api/authorizations")
-def get_authorizations():
-    return store.all_authorizations(_con())
+def _read_expected(task_id: str, *, max_chars: int = 6000) -> str:
+    """读一道题的判定标准原文(tasks/<id>/expected/end-state.md), 给抽查员对照。"""
+    import pathlib as _pl
+    tdir = None
+    for t in SUITE.discover_tasks():
+        if t.task_spec.task_id == task_id:
+            tdir = _pl.Path(t.task_dir)
+            break
+    if tdir is None:
+        return ""
+    edir = tdir / "expected"
+    parts = []
+    for name in ("end-state.md", "README.md"):
+        fp = edir / name
+        if fp.is_file():
+            try:
+                parts.append(f"### {name}\n{fp.read_text(encoding='utf-8')}")
+            except Exception:
+                pass
+    return ("\n\n".join(parts))[:max_chars]
 
 
-@app.get("/api/enums")
-def get_enums():
-    return {
-        "product_judgment": list(F.PRODUCT_JUDGMENT_VALUES),
-        "final_category": list(F.FINAL_CATEGORY_VALUES),
-        "suspected": list(F.SUSPECTED_VALUES),
-    }
+def _artifact_files_for(con, task_id: str, product: str) -> tuple[list[dict], str | None]:
+    """列出某(task,product)提交产物目录下的文件(名+大小+相对路径), 返回(files, artifact_path)。
+
+    抽查员要亲眼看 AI 交付了什么。产物目录来自 submissions.artifact_path(该产品最近一次
+    有产物的提交)。文件不入库, 这里只列目录清单, 内容走 /artifact 下载端点。
+    """
+    import pathlib as _pl
+    art_path = None
+    # submissions 只带 assignment_id + product, task_id 在 assignments 上 —— 必须 join
+    # 才能按 (task,product) 找产物目录(此前直接 WHERE submissions.task_id 恒抛异常 ->
+    # 产物列表永远空、下载永远 404)。取该 (task,product) 最近一次有产物的提交目录。
+    try:
+        rows = con.execute(
+            """SELECT s.artifact_path AS artifact_path FROM submissions s
+               JOIN assignments a ON a.id = s.assignment_id
+               WHERE a.task_id=? AND s.product=? AND s.artifact_path IS NOT NULL
+               ORDER BY s.submitted_ts DESC""", (task_id, product)).fetchall()
+    except Exception:
+        rows = []
+    for r in rows:
+        p = _pl.Path(r["artifact_path"]).expanduser()
+        if p.is_dir():
+            art_path = str(p)
+            break
+    if art_path is None:
+        return [], None
+    files = []
+    base = _pl.Path(art_path)
+    for f in sorted(base.rglob("*")):
+        if f.is_file() and not f.name.startswith("."):
+            files.append({"name": f.name,
+                          "rel": f.relative_to(base).as_posix(),
+                          "size": f.stat().st_size})
+    return files, art_path
 
 
-# === MR-3 (#39) 账号: 私发链接自注册登录 =================================
+# === MR-3 (#39) 账号: 私发链接自注册登录 (鉴权基础设施, 必须先于第一个使用点定义) =====
 def current_user(authorization: str | None = Header(default=None)):
     """依赖注入: 从 Authorization: Bearer <token> 解析当前用户与角色 (story 1)."""
     token = None
@@ -410,6 +454,9 @@ def rbac(action: str):
     通过则注入 user dict, 不通过统一翻 403。好处: (1) 忘记加鉴权在签名上就看得出;
     (2) 权限动作作为依赖声明的一部分, 端点体只剩业务逻辑。路由 URL / HTTP 方法 /
     响应体一字不变, test_server_smoke 的路由契约不受影响。
+
+    注意: current_user/rbac 必须定义在第一个 `user=rbac(...)` 端点之前 —— 默认参数
+    在函数定义期求值, 定义靠后会 NameError 让整个 app import 失败(曾被混提弄坏)。
     """
     def _guard(user=Depends(current_user)) -> dict:
         try:
@@ -417,6 +464,140 @@ def rbac(action: str):
         except RBAC.PermissionDenied as e:
             raise HTTPException(403, str(e))
     return Depends(_guard)
+
+
+@app.get("/api/spotcheck/{queue_id}/detail")
+def get_spotcheck_detail(queue_id: int, user=rbac("review")):
+    """抽查项完成情况聚合: 一次拿齐抽查员判断所需的全部依据(此前只有一句原因)。
+
+    聚合 (task_id,product,run_idx) 对应的:
+      - run: AI 过程摘录 + gate + 客观完成度 + 成本
+      - score: 五维明细(subjective) + 能力分 + 评委挑的毛病(defects) + 三模型分歧维度
+      - 进队列原因证据: H1 诚实度(低分透出) + 分歧维度
+      - expected: 该题判定标准原文(对照"本该做到什么")
+      - artifacts: AI 实际交付的产物文件列表(可经 /artifact 端点下载)
+    """
+    con = _con()
+    item = store.get_spot_check(con, queue_id)
+    if item is None:
+        raise HTTPException(404, f"抽查项不存在: {queue_id}")
+    tid, prod, ridx = item["task_id"], item["product"], item["run_idx"]
+
+    run = con.execute(
+        "SELECT * FROM runs WHERE task_id=? AND product=? AND run_idx=?",
+        (tid, prod, ridx)).fetchone()
+    run = dict(run) if run else None
+
+    score = con.execute(
+        "SELECT * FROM scores WHERE task_id=? AND product=? AND run_idx=?",
+        (tid, prod, ridx)).fetchone()
+    score = dict(score) if score else None
+    subjective = disagreement = defects = None
+    if score:
+        import json as _j
+        for raw, key in (("subjective_json", "subjective"),
+                         ("disagreement_json", "disagreement"),
+                         ("defects_json", "defects")):
+            try:
+                val = _j.loads(score.get(raw) or "null")
+            except Exception:
+                val = None
+            if key == "subjective":
+                subjective = val
+            elif key == "disagreement":
+                disagreement = val
+            else:
+                defects = val
+
+    files, _ = _artifact_files_for(con, tid, prod)
+
+    # 客观完成度明细: 硬性断言过了几条/共几条/是否有 primary 失败 —— 抽查员核实
+    # 「机器判的完成度对不对」的头号依据(此前 detail 只给一个 ratio 数字)。
+    obj = None
+    if run:
+        passed = run.get("objective_passed") or 0
+        total = run.get("objective_total") or 0
+        obj = {
+            "passed": passed,
+            "total": total,
+            "failed": max(total - passed, 0),
+            "failed_primary": bool(run.get("objective_failed_primary")),
+            "ratio": run.get("objective_ratio"),
+            "evidence_source": run.get("evidence_source"),
+            "claimed_success": run.get("claimed_success"),
+        }
+
+    return {
+        "queue_item": item,
+        "task_id": tid, "product": prod, "run_idx": ridx,
+        "run": ({"transcript_excerpt": run.get("transcript_excerpt"),
+                 "gate": run.get("gate"),
+                 "objective_passed": run.get("objective_passed"),
+                 "objective_total": run.get("objective_total"),
+                 "objective_failed_primary": run.get("objective_failed_primary"),
+                 "objective_ratio": run.get("objective_ratio"),
+                 "cost_usd": run.get("cost_usd"),
+                 "cost_input_tokens": run.get("cost_input_tokens"),
+                 "cost_output_tokens": run.get("cost_output_tokens"),
+                 "cost_source": run.get("cost_source"),
+                 "cost_model_calls": run.get("cost_model_calls")} if run else None),
+        "objective": obj,
+        "score": ({"sample_score": score.get("sample_score"),
+                   "h1_honesty": score.get("h1_honesty"),
+                   "gate": score.get("gate"),
+                   "objective_ratio": score.get("objective_ratio"),
+                   "human_review_status": score.get("human_review_status"),
+                   "review_note": score.get("review_note"),
+                   "override_sample_score": score.get("override_sample_score"),
+                   "override_h1_honesty": score.get("override_h1_honesty"),
+                   "reviewed_by": score.get("reviewed_by"),
+                   "subjective": subjective,
+                   "disagreement": disagreement,
+                   "defects": defects} if score else None),
+        "expected": _read_expected(tid),
+        "artifacts": files,
+    }
+
+
+@app.get("/api/spotcheck/{queue_id}/artifact/{file_path:path}")
+def download_spotcheck_artifact(queue_id: int, file_path: str, user=rbac("review")):
+    """下载/预览一条抽查项对应 (task,product) 的真实交付产物文件。
+
+    抽查员要亲眼看 AI 交付了什么(截图/导出文件/对话记录), 不能只看一句摘要。由
+    queue_id 定位 (task,product) -> _artifact_files_for 找产物根目录 -> 按相对路径回传。
+    严格路径校验防目录穿越(target 必须落在产物根目录内、非隐藏文件)。需 review 权限
+    (intern 不能看别人的原始产物, 走复核链)。文件不入库, 内容实时从磁盘回传。
+    """
+    import pathlib as _pl
+    con = _con()
+    item = store.get_spot_check(con, queue_id)
+    if item is None:
+        raise HTTPException(404, f"抽查项不存在: {queue_id}")
+    _, art_path = _artifact_files_for(con, item["task_id"], item["product"])
+    if art_path is None:
+        raise HTTPException(404, "该抽查项没有可下载的产物目录")
+    base = _pl.Path(art_path).resolve()
+    target = (base / file_path).resolve()
+    # 防目录穿越: 目标必须落在产物根目录内, 且是真实文件、非隐藏。
+    if not str(target).startswith(str(base) + "/") or not target.is_file():
+        raise HTTPException(404, "产物文件不存在或不可访问")
+    if target.name.startswith("."):
+        raise HTTPException(404, "产物文件不存在或不可访问")
+    return FileResponse(str(target), filename=target.name)
+
+
+@app.get("/api/authorizations")
+def get_authorizations():
+    return store.all_authorizations(_con())
+
+
+@app.get("/api/enums")
+def get_enums():
+    return {
+        "product_judgment": list(F.PRODUCT_JUDGMENT_VALUES),
+        "final_category": list(F.FINAL_CATEGORY_VALUES),
+        "suspected": list(F.SUSPECTED_VALUES),
+    }
 
 
 class InviteIn(BaseModel):
@@ -1037,21 +1218,8 @@ def rebuild_spotcheck(user=rbac("manage_task_catalog")):
     return SP.build_queue(_con())
 
 
-class VerdictIn(BaseModel):
-    status: Literal["ok", "anomaly"]     # 非法值 -> pydantic 422, 不再穿透成 500
-    verdict_note: str | None = None
-
-
-@app.post("/api/spotcheck/{queue_id}/verdict")
-def submit_verdict(queue_id: int, body: VerdictIn, user=rbac("review")):
-    # checked_by 绑定认证身份, 不从请求体取 (此前客户端可伪造 "PM" 签字 — 已修)。
-    kwargs = dict(status=body.status, checked_by=user["id"],
-                  verdict_note=body.verdict_note)
-    if body.status == "anomaly":
-        kwargs.update(role="reviewer", name="panel")
-    SP.submit_verdict(_con(), queue_id, **kwargs)
-    return {"ok": True, "id": queue_id}
-
+# 裁决收敛: 旧 /api/spotcheck/{id}/verdict (ok/anomaly 简单两键) 已删除。裁决统一走
+# 下面 MR-13 的 /review (有道理/有问题) + 三级反哺 /suspect /exclude /override。
 
 # === MR-13 (#49) 人工复核队列 + 职责分离 + 重校准 (ADR-0014) ================
 class AssignReviewerIn(BaseModel):
@@ -1121,6 +1289,73 @@ def recalibrate_from_review(queue_id: int, user=Depends(current_user)):
     return {"ok": True, "id": queue_id,
             "recalibration_triggered": out["recalibration_triggered"],
             "authorization": out["authorization"]}
+
+
+# === 抽查三级闭环反哺: 标记存疑 / 排除出榜 / owner 改分 (真回写榜单) =========
+class ReviewNoteIn(BaseModel):
+    note: str | None = None
+
+
+@app.post("/api/spotcheck/{queue_id}/suspect")
+def spotcheck_mark_suspect(queue_id: int, body: ReviewNoteIn,
+                           user=Depends(current_user)):
+    """标记这次运行的分数「存疑」(reviewer 起)。分数保留在榜, 打标提示待商榷。"""
+    try:
+        item = RQ.mark_suspect(_con(), queue_id, reviewer=user, note=body.note)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except RQ.ReviewError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True, "id": queue_id, "human_review_status": "suspect"}
+
+
+@app.post("/api/spotcheck/{queue_id}/exclude")
+def spotcheck_exclude(queue_id: int, body: ReviewNoteIn,
+                      user=Depends(current_user)):
+    """把这次运行「排除出榜」(reviewer 起)。不进公平排名, 记录保留供审计。"""
+    try:
+        item = RQ.exclude_run(_con(), queue_id, reviewer=user, note=body.note)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except RQ.ReviewError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True, "id": queue_id, "human_review_status": "excluded"}
+
+
+@app.post("/api/spotcheck/{queue_id}/clear-review")
+def spotcheck_clear_review(queue_id: int, user=Depends(current_user)):
+    """撤销存疑/排除/改分处置(reviewer 起), 恢复机器原判。"""
+    try:
+        RQ.clear_review_status(_con(), queue_id, reviewer=user)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except RQ.ReviewError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True, "id": queue_id, "human_review_status": None}
+
+
+class OverrideScoreIn(BaseModel):
+    sample_score: float | None = None    # 能力分 [0,1]; None = 不改能力分
+    h1_honesty: int | None = None        # 诚实度 1-5; None = 不改
+    note: str | None = None
+
+
+@app.post("/api/spotcheck/{queue_id}/override")
+def spotcheck_override(queue_id: int, body: OverrideScoreIn,
+                       user=Depends(current_user)):
+    """owner 人工改分(owner 独占)。机器原分留痕, 榜单用 override 分。
+
+    reviewer/intern -> 403; 分数越界(能力分非[0,1]/诚实度非1-5)-> 400。
+    """
+    try:
+        RQ.override_score(_con(), queue_id, actor=user,
+                          sample_score=body.sample_score,
+                          h1_honesty=body.h1_honesty, note=body.note)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except RQ.ReviewError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "id": queue_id, "human_review_status": "overridden"}
 
 
 # === MR-14 (#50) 方法初稿提炼 + 复核闸 + 导出 (方法复核闸) =================

@@ -120,8 +120,23 @@ export const getCandidateTasks = () =>
   api.get("/candidate-tasks").then((r) => r.data);
 export const rebuildSpotcheck = () =>
   api.post("/spotcheck/rebuild").then((r) => r.data);
-export const postVerdict = (id, body) =>
-  api.post(`/spotcheck/${id}/verdict`, body).then((r) => r.data);
+// 抽查项完成情况聚合(展开看客观断言逐条+五维+成本+产物文件)。
+export const spotcheckDetail = (id) =>
+  api.get(`/spotcheck/${id}/detail`).then((r) => r.data);
+// 产物文件下载 URL(点击直接打开/下载 AI 真实交付)。带 base + 相对路径。
+export const artifactUrl = (id, rel) =>
+  `${api.defaults.baseURL}/spotcheck/${id}/artifact/${rel.split("/").map(encodeURIComponent).join("/")}`;
+// 裁决收敛后的单一机制: 有道理/有问题 + 三级反哺(存疑/排除/owner改分)。
+export const reviewVerdict = (id, verdict, note) =>
+  api.post(`/spotcheck/${id}/review`, { verdict, note: note || null }).then((r) => r.data);
+export const markSuspect = (id, note) =>
+  api.post(`/spotcheck/${id}/suspect`, { note: note || null }).then((r) => r.data);
+export const excludeRun = (id, note) =>
+  api.post(`/spotcheck/${id}/exclude`, { note: note || null }).then((r) => r.data);
+export const clearReview = (id) =>
+  api.post(`/spotcheck/${id}/clear-review`).then((r) => r.data);
+export const overrideScore = (id, body) =>
+  api.post(`/spotcheck/${id}/override`, body).then((r) => r.data);
 
 // --- MR-6/7 实习生工作流:领题 / 提交 ---------------------------------
 export const getAssignments = () => api.get("/assignments").then((r) => r.data);

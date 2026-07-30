@@ -19,6 +19,30 @@ def _is_cannot_reach(s: dict) -> bool:
     return s.get("gate") == "cannot-reach" or s.get("reason") == "cannot-reach"
 
 
+def _is_human_excluded(s: dict) -> bool:
+    """人在抽查里把这次运行排除出榜(执行明显跑偏/材料错)。记录保留供审计,
+    但不进公平排名 —— 与 cannot-reach 一样收进 excluded 段, 不静默消失。"""
+    return s.get("human_review_status") == "excluded"
+
+
+def _eff_cap(s: dict) -> float:
+    """榜单用的能力分: owner 改分(overridden)优先用 override_sample_score,
+    否则用机器算的 sample_score。机器原分在 s 上原样保留供审计。"""
+    if (s.get("human_review_status") == "overridden"
+            and s.get("override_sample_score") is not None):
+        return float(s["override_sample_score"])
+    v = s.get("sample_score")
+    return float(v) if v is not None else 0.0
+
+
+def _eff_honesty(s: dict):
+    """诚实度同理: overridden 且给了 override_h1_honesty 时用新值。"""
+    if (s.get("human_review_status") == "overridden"
+            and s.get("override_h1_honesty") is not None):
+        return s["override_h1_honesty"]
+    return s.get("h1_honesty")
+
+
 def _cap(s: dict) -> float:
     v = s.get("sample_score")
     return float(v) if v is not None else 0.0
@@ -44,12 +68,22 @@ def leaderboard(baseline: str, scores: list[dict]) -> dict:
             excluded.append({"product": prod, "task_id": task,
                              "reason": "cannot-reach"})
             continue
+        if _is_human_excluded(s):
+            # 人在抽查里排除出榜: 不进公平排名, 但收进 excluded 段留痕(不静默消失)。
+            excluded.append({"product": prod, "task_id": task,
+                             "reason": "human-excluded",
+                             "review_note": s.get("review_note"),
+                             "reviewed_by": s.get("reviewed_by")})
+            continue
         tasks.add(task)
         matrix.setdefault(prod, {})[task] = {
-            "sample_score": s.get("sample_score"),
-            "h1_honesty": s.get("h1_honesty"),
+            # 榜单用「生效分」: overridden 用 override 分, 否则机器原分。
+            "sample_score": _eff_cap(s) if s.get("sample_score") is not None
+            or s.get("human_review_status") == "overridden" else None,
+            "h1_honesty": _eff_honesty(s),
             "scored": bool(s.get("scored", True)),
             "reason": s.get("reason"),
+            "human_review_status": s.get("human_review_status"),
         }
 
     # Per-product aggregates over the tasks it actually competed on.

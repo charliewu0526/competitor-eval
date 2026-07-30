@@ -109,6 +109,73 @@ def submit_verdict(con, queue_id: int, *, reviewer: dict | None,
     return store.get_spot_check(con, queue_id)
 
 
+# --- 2b. 三级闭环反哺: 标记存疑 / 排除出榜 / owner 改分 -------------------
+# 抽查员看完一次运行的完整完成情况后, 除了下「有道理/有问题」结论, 还能对这次运行
+# 的分数做三级处置, 真正回写进榜单(不再只是记一条抽查结论):
+#   - 标记存疑(suspect): reviewer 起。分数保留在榜, 但打「存疑」标, 提示这条待商榷。
+#   - 排除出榜(excluded): reviewer 起。这次运行不进公平排名(如执行明显跑偏/材料错),
+#     但记录保留供审计, 不静默删。
+#   - owner 改分(overridden): owner 独占。人工覆写能力分(可含诚实度), 机器原分留痕,
+#     榜单消费时优先用 override 分。改分是最重的干预, 只给 owner。
+def _run_key(con, queue_id: int) -> tuple[str, str, int]:
+    item = store.get_spot_check(con, queue_id)
+    if item is None:
+        raise ReviewError(f"复核项不存在: {queue_id!r}")
+    return item["task_id"], item["product"], item["run_idx"]
+
+
+def mark_suspect(con, queue_id: int, *, reviewer: dict | None,
+                 note: str | None = None) -> dict:
+    """标记这次运行的分数「存疑」(reviewer 起)。保留在榜, 打标提示待商榷。"""
+    RBAC.require(reviewer, "review")
+    tid, prod, ridx = _run_key(con, queue_id)
+    store.set_review_status(con, task_id=tid, product=prod, run_idx=ridx,
+                            status="suspect", note=note,
+                            by=(reviewer or {}).get("id"))
+    return store.get_spot_check(con, queue_id)
+
+
+def exclude_run(con, queue_id: int, *, reviewer: dict | None,
+                note: str | None = None) -> dict:
+    """把这次运行「排除出榜」(reviewer 起)。不进公平排名, 记录保留供审计。"""
+    RBAC.require(reviewer, "review")
+    tid, prod, ridx = _run_key(con, queue_id)
+    store.set_review_status(con, task_id=tid, product=prod, run_idx=ridx,
+                            status="excluded", note=note,
+                            by=(reviewer or {}).get("id"))
+    return store.get_spot_check(con, queue_id)
+
+
+def clear_review_status(con, queue_id: int, *, reviewer: dict | None) -> dict:
+    """撤销存疑/排除处置(reviewer 起), 恢复为机器原判。改分的撤销同样清标。"""
+    RBAC.require(reviewer, "review")
+    tid, prod, ridx = _run_key(con, queue_id)
+    store.set_review_status(con, task_id=tid, product=prod, run_idx=ridx,
+                            status=None, note=None,
+                            by=(reviewer or {}).get("id"))
+    return store.get_spot_check(con, queue_id)
+
+
+def override_score(con, queue_id: int, *, actor: dict | None,
+                   sample_score: float | None, h1_honesty: int | None = None,
+                   note: str | None = None) -> dict:
+    """owner 人工改分(owner 独占 calibrate_golden)。机器原分留痕, 榜单用 override 分。
+
+    sample_score 必须在 [0,1](能力分区间), h1_honesty 若给必须 1-5 —— 否则 ReviewError。
+    reviewer/intern 在此被 RBAC 拒(403): 改分是最重干预, 只给 owner。
+    """
+    RBAC.require(actor, "calibrate_golden")  # owner 独占
+    if sample_score is not None and not (0.0 <= float(sample_score) <= 1.0):
+        raise ReviewError(f"能力分须在 [0,1]: 收到 {sample_score!r}")
+    if h1_honesty is not None and not (1 <= int(h1_honesty) <= 5):
+        raise ReviewError(f"诚实度须在 1-5: 收到 {h1_honesty!r}")
+    tid, prod, ridx = _run_key(con, queue_id)
+    store.apply_score_override(con, task_id=tid, product=prod, run_idx=ridx,
+                               sample_score=sample_score, h1_honesty=h1_honesty,
+                               note=note, by=(actor or {}).get("id"))
+    return store.get_spot_check(con, queue_id)
+
+
 # --- 3. 触发重校准 (owner 独占) -------------------------------------------
 def trigger_recalibration(con, queue_id: int, *, actor: dict | None,
                           role: str = "reviewer", name: str = "panel",
