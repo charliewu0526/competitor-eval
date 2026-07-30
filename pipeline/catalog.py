@@ -108,6 +108,7 @@ def _task_card(loaded, registry) -> dict:
         "app": s.app,
         "tier": s.tier,
         "kind": s.kind,
+        "provenance": s.provenance,          # human | auto-from-census (榜单/清单隔离)
         "capability_domain": s.capability_domain,
         "task_nature": s.task_nature,
         "requires_local_desktop": s.requires_local_desktop,
@@ -133,6 +134,10 @@ def build_catalog(tasks_dir=None, registry=None) -> list[dict]:
     loaded = SUITE.discover_tasks(tasks_dir)
     by_domain: dict[str, list[dict]] = {}
     for t in loaded:
+        # 榜单隔离: auto-from-census 候选题不进公平任务清单 (它 expected 未核验),
+        # 单列于 /api/candidate-tasks 区。这里只列 human 正式题。
+        if getattr(t.task_spec, "provenance", "human") == "auto-from-census":
+            continue
         by_domain.setdefault(t.task_spec.capability_domain, []).append(
             _task_card(t, reg))
     groups: list[dict] = []

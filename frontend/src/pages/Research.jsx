@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Typography, Card, Input, Button, Space, Table, Tag, message, Alert, Divider,
 } from "antd";
-import { SearchOutlined, CheckOutlined } from "@ant-design/icons";
-import { runCapabilityResearch, reviewCapability } from "../api";
+import { SearchOutlined, CheckOutlined, ReloadOutlined, WarningOutlined } from "@ant-design/icons";
+import { runCapabilityResearch, reviewCapability, getCandidateTasks } from "../api";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -21,6 +21,18 @@ export default function Research() {
   const [urlsText, setUrlsText] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  const [candTasks, setCandTasks] = useState([]);
+  const [candBusy, setCandBusy] = useState(false);
+
+  const loadCandidates = async () => {
+    setCandBusy(true);
+    try {
+      const r = await getCandidateTasks();
+      setCandTasks(r.tasks || []);
+    } catch (e) { message.error(e.userMessage || String(e)); }
+    finally { setCandBusy(false); }
+  };
+  useEffect(() => { loadCandidates(); }, []);
 
   const doResearch = async () => {
     const urls = urlsText.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -39,8 +51,14 @@ export default function Research() {
 
   const doReview = async (capability, approve) => {
     try {
-      await reviewCapability(product.trim(), capability, approve);
-      message.success(approve ? "已确认,升为 shipped 进差集" : "维持 candidate");
+      const r = await reviewCapability(product.trim(), capability, approve);
+      if (approve && r.generated_task) {
+        message.success(`已确认升 shipped,并自动生成候选题 ${r.generated_task.task_id}(未核验,不进主榜)`);
+      } else if (approve && r.gen_note) {
+        message.warning(`已升 shipped,但候选题生成失败:${r.gen_note}`);
+      } else {
+        message.success(approve ? "已确认,升为 shipped 进差集" : "维持 candidate");
+      }
       // 本地反映状态变化
       setResult((prev) => prev && {
         ...prev,
@@ -115,6 +133,35 @@ export default function Research() {
             dataSource={result.extracted || []} pagination={false} />
         </Card>
       )}
+
+      <Divider />
+      <Card size="small"
+        title={<Space><WarningOutlined style={{ color: "#faad14" }} />
+          自动生成候选题(auto-from-census)
+          <Tag color="gold">{candTasks.length} 道</Tag></Space>}
+        extra={<Button size="small" icon={<ReloadOutlined />} loading={candBusy}
+          onClick={loadCandidates}>刷新</Button>}>
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+          message="AI 暂定基准 · 未经人核验 · 不进公平主榜单"
+          description={"这些题由能力普查差集在你确认竞品能力升 shipped 时自动生成," +
+            "prompt/expected 是 AI 依据竞品能力条目暂拟、尚未人工核验。拿它给所有产品" +
+            "打分会失真,所以它们隔离于公平主榜单,单列此区。请真跑核验、写死正确答案后" +
+            "把 provenance 改为 human 才能转正进主榜。"} />
+        <Table rowKey="task_id" size="small" pagination={false}
+          dataSource={candTasks}
+          columns={[
+            { title: "候选题 id", dataIndex: "task_id", key: "task_id",
+              render: (t) => <Text code>{t}</Text> },
+            { title: "来源竞品", dataIndex: "rival", key: "rival", width: 100,
+              render: (r) => r ? <Tag>{r}</Tag> : "—" },
+            { title: "能力(AI 暂定)", dataIndex: "capability", key: "capability", ellipsis: true },
+            { title: "能力域", dataIndex: "capability_domain", key: "capability_domain", width: 150 },
+            { title: "状态", key: "prov", width: 160,
+              render: () => <Tag color="gold" icon={<WarningOutlined />}>未核验·不进主榜</Tag> },
+            { title: "证据", dataIndex: "evidence", key: "evidence", ellipsis: true,
+              render: (e) => e || "—" },
+          ]} />
+      </Card>
     </div>
   );
 }

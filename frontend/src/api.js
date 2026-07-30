@@ -100,10 +100,13 @@ export const runCapabilityResearch = (product, sourceUrls, persist = true) =>
   api.post("/capability-research",
     { product, source_urls: sourceUrls, persist }, { timeout: 180000 })
     .then((r) => r.data);
-// 复核一条 candidate 能力条目:approve=true 升 shipped 进差集。
+// 复核一条 candidate 能力条目:approve=true 升 shipped 进差集(并自动生成候选题)。
 export const reviewCapability = (product, capability, approve) =>
   api.post(`/capabilities/${encodeURIComponent(product)}/review`,
     { capability, approve }).then((r) => r.data);
+// 自动生成候选题(provenance=auto-from-census)只读列表 —— 与公平主榜单隔离。
+export const getCandidateTasks = () =>
+  api.get("/candidate-tasks").then((r) => r.data);
 export const rebuildSpotcheck = () =>
   api.post("/spotcheck/rebuild").then((r) => r.data);
 export const postVerdict = (id, body) =>

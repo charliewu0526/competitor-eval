@@ -89,7 +89,38 @@ def leaderboard(baseline: str, scores: list[dict]) -> dict:
     }
 
 
-def from_store(con, baseline: str = "vio") -> dict:
-    """Convenience: build the leaderboard straight from the SQLite scores table."""
+def candidate_task_ids(tasks_dir=None) -> set[str]:
+    """任务库里 provenance=auto-from-census 的 task_id 集合 (榜单隔离用)。
+
+    这些题的 expected 是 AI 暂定基准、未经人核验, 拿它给所有产品打分会失真 ——
+    故必须从公平主榜单剔除, 单列「自动生成候选题」区 (供人真跑核验后转正)。
+    发现失败 (任务库不可读) => 空集 (宁可不隔离也不误伤, 如实降级)。
+    """
+    try:
+        from pipeline import suite as SUITE
+        return {t.task_spec.task_id for t in SUITE.discover_tasks(tasks_dir)
+                if getattr(t.task_spec, "provenance", "human") == "auto-from-census"}
+    except Exception:
+        return set()
+
+
+def from_store(con, baseline: str = "vio", *, tasks_dir=None) -> dict:
+    """Convenience: build the leaderboard straight from the SQLite scores table.
+
+    榜单隔离: provenance=auto-from-census 的候选题分数**不进公平排名** (它们的
+    expected 是 AI 暂定基准), 单独收进返回结构的 `candidate_tasks` 段 (标注未核验),
+    不静默消失。human 题走原公平主榜单逻辑不受影响。
+    """
     from pipeline import store
-    return leaderboard(baseline, store.all_scores(con))
+    all_rows = store.all_scores(con)
+    cand_ids = candidate_task_ids(tasks_dir)
+    fair = [s for s in all_rows if s.get("task_id") not in cand_ids]
+    cand = [s for s in all_rows if s.get("task_id") in cand_ids]
+    board = leaderboard(baseline, fair)
+    board["candidate_tasks"] = {
+        "note": ("auto-from-census 候选题: expected 为 AI 暂定基准、未经人核验, "
+                 "不进公平主榜单; 供人真跑核验后转正 human。"),
+        "task_ids": sorted(cand_ids),
+        "scores": cand,
+    }
+    return board

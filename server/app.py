@@ -1292,8 +1292,57 @@ def review_capability_entry(product: str, body: CapabilityReviewIn,
         raise HTTPException(404, f"能力条目未找到: {body.capability!r}")
     CEN.review_capability(hit, approve=body.approve, reviewer=user.get("id", ""))
     CS.save_capabilities(clist)
+    # 升 shipped 钩子: 确认为已上线能力后, 自动脚手架一道候选题(provenance=
+    # auto-from-census, 隔离于公平主榜单)。异常不阻断复核主流程(如实记 note)。
+    generated_task = None
+    gen_note = None
+    if body.approve and hit.status == "shipped":
+        try:
+            from pipeline import task_gen as TG
+            generated_task = TG.generate_candidate_task(hit, product)
+        except Exception as ex:
+            gen_note = f"候选题自动生成失败(如实标, 不阻断复核): {str(ex)[:160]}"
     return {"product": product, "capability": hit.capability,
-            "status": hit.status, "approved": body.approve}
+            "status": hit.status, "approved": body.approve,
+            "generated_task": generated_task, "gen_note": gen_note}
+
+
+@app.get("/api/candidate-tasks")
+def list_candidate_tasks():
+    """自动生成候选题(provenance=auto-from-census)只读列表 —— 与公平主榜单隔离。
+
+    这些题由能力普查差集自动生成, prompt/expected 是 AI 暂定基准、未经人核验, 不进
+    公平主榜单。此端点单列它们供人真跑核验后转正(把 provenance 改 human)。每条带
+    来源竞品/能力/证据/出处 + 中立 Prompt, 前端据此打「未核验」醒目标记。
+    """
+    from pipeline import suite as SUITE
+    from pipeline import taskbank as TB
+    out = []
+    for t in SUITE.discover_tasks():
+        s = t.task_spec
+        if s.provenance != "auto-from-census":
+            continue
+        prov = {}
+        try:
+            prov = TB.load_meta(t.task_dir).get("provenance") or {}
+        except Exception:
+            prov = {}
+        out.append({
+            "task_id": s.task_id,
+            "app": s.app,
+            "capability_domain": s.capability_domain,
+            "kind": s.kind,
+            "prompt": s.prompt,
+            "provenance": s.provenance,
+            "rival": prov.get("rival"),
+            "capability": prov.get("capability"),
+            "evidence": prov.get("evidence"),
+            "source": prov.get("source"),
+            "generated_at": prov.get("generated_at"),
+            "note": prov.get("note"),
+        })
+    return {"count": len(out),
+            "tasks": sorted(out, key=lambda c: c["task_id"])}
 
 
 @app.post("/api/capability-matrix/{domain}")
@@ -1617,6 +1666,13 @@ def approve_report(report_id: str, body: ApproveIn | None = None,
     except REPORTS.ReportError as e:
         # 非 patch-ready / 不存在 -> 冲突/未找到(canary 守卫 & reports.get)。
         raise HTTPException(409, str(e))
+    except Exception as e:
+        # 金丝雀上线是起子进程/跑 git/切主进程的重活, 任何一步炸了(起不了候选
+        # 进程、健康检查连不上、git 回滚失败等)都不该裸奔成 500 白屏。翻成
+        # 502 + 人话原因, 让 owner 在反馈台看到「为什么没上成」而非空错误。
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(502, f"上线金丝雀执行失败: {e}")
     # report 行按 owner 视图返回(反馈台可见内部字段)。
     r = out.get("report")
     return {"outcome": out.get("outcome"),

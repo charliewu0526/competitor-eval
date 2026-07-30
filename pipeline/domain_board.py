@@ -153,9 +153,16 @@ def task_domain_map(tasks_dir=None) -> dict[str, str]:
 def from_store(con, baseline: str = "vio", *, now: float | None = None,
                window_days: float = DEFAULT_FRESHNESS_DAYS,
                tasks_dir=None) -> dict:
-    """便捷: 直接从 store 的 scores + 任务库域映射组装分维度榜单."""
+    """便捷: 直接从 store 的 scores + 任务库域映射组装分维度榜单.
+
+    榜单隔离: provenance=auto-from-census 的候选题分数不进任何分维度公平榜 (它们的
+    expected 是 AI 暂定基准、未核验), 从 scores 里剔除后再分桶。human 题不受影响。
+    """
     from pipeline import store as STORE
+    from pipeline import leaderboard as LB
     scores = STORE.all_scores(con)
-    return build_domain_board(scores, task_domain_map(tasks_dir),
+    cand_ids = LB.candidate_task_ids(tasks_dir)
+    fair = [s for s in scores if s.get("task_id") not in cand_ids]
+    return build_domain_board(fair, task_domain_map(tasks_dir),
                               baseline=baseline, now=now,
                               window_days=window_days)

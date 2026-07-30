@@ -35,6 +35,11 @@ TASK_NATURE_VALUES = ("simple", "long-horizon", "scheduled", "dirty-data",
 # 也非竞品"自报"self-report)。零成本是可核查的事实, cost_usd 记 0.0 而非 None。
 COST_SOURCE_VALUES = ("self-report", "proxy", "unavailable", "native")
 EVIDENCE_SOURCE_VALUES = ("log", "screenshot", "recording", "unavailable")
+# 题目来源 (2026-07 新增): human = 人工出题(写死正确答案、素材经人核验,进公平主榜单);
+# auto-from-census = 竞品能力普查差集自动生成的候选题(prompt/expected 由 AI 暂定、
+# 未经人核验)。auto 题**不进公平主榜单**(它的 expected 是 AI 暂定基准, 拿它给所有产品
+# 打分会失真), 单独归"自动生成候选题"区, 供人真跑核验后转正。默认 human 向后兼容。
+PROVENANCE_VALUES = ("human", "auto-from-census")
 
 
 def _check(name: str, val, allowed: tuple) -> None:
@@ -65,6 +70,9 @@ class TaskSpec:
     # 并强调起始状态由系统统一提供、禁止自建, 保证各竞品在同一份素材上对打(可比)。
     # 只是中性上手提示 + 不可改约束, 不改变任务数据本身。
     setup: str | None = None
+    # 题目来源: human(人工出题, 进公平主榜单) | auto-from-census(竞品能力普查自动
+    # 生成的候选题, expected 为 AI 暂定基准未经人核验, 不进公平主榜单)。默认 human。
+    provenance: str = "human"
 
     def __post_init__(self) -> None:
         _check("tier", self.tier, TIER_VALUES)
@@ -72,6 +80,7 @@ class TaskSpec:
         _check("dirty_data_level", self.dirty_data_level, DIRTY_VALUES)
         _check("capability_domain", self.capability_domain, CAPABILITY_DOMAIN_VALUES)
         _check("task_nature", self.task_nature, TASK_NATURE_VALUES)
+        _check("provenance", self.provenance, PROVENANCE_VALUES)
         if self.dirty_data_level_suggested is not None:
             _check("dirty_data_level_suggested", self.dirty_data_level_suggested, DIRTY_VALUES)
         if self.dirty_data_level == "heavy" and not self.known_edge_cases:
