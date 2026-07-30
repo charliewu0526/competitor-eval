@@ -1,7 +1,34 @@
 import React, { useEffect, useState } from "react";
 import { Typography, Table, Tag, Progress, Card, Collapse, Spin, Alert, Space, Tooltip } from "antd";
-import { getDomainBoard } from "../api";
+import { BulbOutlined } from "@ant-design/icons";
+import { getDomainBoard, getDomainSummary } from "../api";
 import { InfoTip } from "../glossary.jsx";
+
+// Claude 生成的一段「vio 优劣势总结」展示块。res 形如 {text} / {dry_run} / {empty}。
+function AnalysisNote({ res, loading }) {
+  if (loading) {
+    return (
+      <div style={{ marginBottom: 14, padding: "10px 14px", background: "#f6f9ff",
+        borderRadius: 6, color: "#8c8c8c" }}>
+        <Spin size="small" /> <span style={{ marginLeft: 8 }}>正在生成本域优劣势总结…</span>
+      </div>
+    );
+  }
+  if (!res) return null;
+  if (res.text) {
+    return (
+      <Alert type="info" showIcon icon={<BulbOutlined />} style={{ marginBottom: 14 }}
+        message={<span>本域优劣势总结 <span style={{ color: "#8c8c8c", fontWeight: 400, fontSize: 12 }}>
+          (Claude 读最新评分自动生成{res.cached ? "·缓存" : ""})</span></span>}
+        description={<span style={{ whiteSpace: "pre-wrap" }}>{res.text}</span>} />
+    );
+  }
+  const note = res.note || (res.dry_run ? "未配置分析模型,暂无法生成总结。" : "");
+  if (note) {
+    return <div style={{ marginBottom: 14, color: "#8c8c8c", fontSize: 13 }}>{note}</div>;
+  }
+  return null;
+}
 
 function honestyTag(h) {
   if (h == null) return <Tag>未测</Tag>;
@@ -37,7 +64,7 @@ function freshnessCell(fr) {
   );
 }
 
-function DomainCard({ board }) {
+function DomainCard({ board, summary, summaryLoading }) {
   const lb = board.leaderboard || {};
   const ranking = lb.ranking || [];
   const excluded = lb.excluded || [];
@@ -95,6 +122,7 @@ function DomainCard({ board }) {
         <span style={{ color: "#8c8c8c", fontWeight: 400, fontSize: 13 }}>{board.hint}</span></Space>}
       style={{ marginBottom: 20 }}
     >
+      <AnalysisNote res={summary} loading={summaryLoading} />
       <Table
         rowKey="product" columns={columns} dataSource={ranking}
         pagination={false} size="middle"
@@ -129,9 +157,16 @@ function DomainCard({ board }) {
 export default function DomainBoard() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
+  const [summaries, setSummaries] = useState({});   // {domain: {text|dry_run|...}}
+  const [sumLoading, setSumLoading] = useState(true);
 
   useEffect(() => {
     getDomainBoard("vio").then(setData).catch((e) => setErr(e.userMessage || String(e)));
+    // 一次性拉全部域的优劣势总结(不传 domain -> {domain: {...}});读缓存,首次可能现算稍慢。
+    getDomainSummary("vio").then((all) => {
+      setSummaries(all || {});
+      setSumLoading(false);
+    }).catch(() => setSumLoading(false));
   }, []);
 
   if (err) return <Alert type="error" message="后端没连上" description={err} showIcon />;
@@ -153,14 +188,18 @@ export default function DomainBoard() {
         <Alert type="info" showIcon message="还没有分数" description="跑几道题、落库后这里就会按能力域出榜。" />
       )}
 
-      {boards.map((b) => <DomainCard key={b.domain} board={b} />)}
+      {boards.map((b) => (
+        <DomainCard key={b.domain} board={b}
+          summary={summaries[b.domain]} summaryLoading={sumLoading} />
+      ))}
 
       {ungrouped.map((b) => (
         <div key="ungrouped">
           <Alert style={{ marginBottom: 8 }} type="warning" showIcon
             message="以下分数的任务未归入任何能力域"
             description="任务缺 capability_domain 或不在任务库,先单列出来避免静默丢失。" />
-          <DomainCard board={b} />
+          <DomainCard board={b}
+            summary={summaries[b.domain]} summaryLoading={sumLoading} />
         </div>
       ))}
     </div>

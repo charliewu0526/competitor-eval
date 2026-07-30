@@ -179,6 +179,71 @@ def get_scores():
     return store.all_scores(_con())
 
 
+@app.get("/api/competitor-radar")
+def get_competitor_radar(baseline: str = "vio", domain: str | None = None):
+    """按竞品聚合五维(纯 scores 派生, 不调 LLM): 多竞品叠加雷达图数据, vio 高亮。
+
+    domain 给定则只聚合该能力域任务。实时随 scores 表变化, 无需缓存。
+    """
+    from pipeline import analysis_synth as AS
+    return AS.competitor_radar(_con(), baseline=baseline, domain=domain)
+
+
+@app.get("/api/analysis/domain-summary")
+def get_domain_summary(baseline: str = "vio", domain: str | None = None):
+    """分维度榜单某域的 vio 优劣势总结(Claude 生成)。
+
+    读缓存(评分落库后增量预跑已写); 未命中/失效则现算并落缓存(首次稍慢)。
+    domain 缺省 -> 返回全部域的总结 {domain: {...}}。
+    """
+    from pipeline import analysis_synth as AS
+    con = _con()
+    board = DB.from_store(con, baseline=baseline)
+    boards = (board.get("boards") or []) + (board.get("ungrouped") or [])
+    scores = store.all_scores(con)
+    dom_map = AS._task_domain_map()
+
+    def _one(b):
+        dom = b.get("domain")
+        sub = [s for s in scores if dom_map.get(s.get("task_id")) == dom]
+        fp = store.analysis_fingerprint(sub, baseline, scope=dom or "__nodomain__")
+        cached = store.get_cached_analysis(con, "domain-summary", dom or "__nodomain__",
+                                           baseline, fingerprint=fp)
+        if cached is not None:
+            return cached
+        res = AS.domain_summary(con, dom, b, baseline=baseline)
+        store.upsert_analysis_cache(con, kind="domain-summary", scope=dom or "__nodomain__",
+                                    baseline=baseline, scores_fingerprint=fp,
+                                    analysis=res, engine=res.get("engine"))
+        return res
+
+    if domain:
+        b = next((x for x in boards if x.get("domain") == domain), None)
+        if b is None:
+            raise HTTPException(404, f"能力域 {domain} 无榜单数据")
+        return _one(b)
+    return {b.get("domain"): _one(b) for b in boards}
+
+
+@app.get("/api/analysis/matrix-reading")
+def get_matrix_reading(baseline: str = "vio"):
+    """按题矩阵的解读文本(Claude 生成)。读缓存, 未命中/失效则现算并落缓存。"""
+    from pipeline import analysis_synth as AS
+    con = _con()
+    lb = LB.from_store(con, baseline=baseline)
+    scores = store.all_scores(con)
+    fp = store.analysis_fingerprint(scores, baseline, scope="__all__")
+    cached = store.get_cached_analysis(con, "matrix-reading", "__all__",
+                                       baseline, fingerprint=fp)
+    if cached is not None:
+        return cached
+    res = AS.matrix_reading(con, lb, baseline=baseline)
+    store.upsert_analysis_cache(con, kind="matrix-reading", scope="__all__",
+                                baseline=baseline, scores_fingerprint=fp,
+                                analysis=res, engine=res.get("engine"))
+    return res
+
+
 @app.get("/api/score/{task_id}/{product}")
 def get_score(task_id: str, product: str):
     import json
@@ -744,6 +809,17 @@ def _score_assignment_into_board(con, assignment_id: str) -> dict:
     except Exception:  # noqa: BLE001
         logging.getLogger("competitor-eval").exception(
             "差距归因预跑失败 task=%s", task_id)
+
+    # 7. 分析文字增量预跑(评测报告升级): 本题 scores 刚变 -> 相关分析缓存失效。
+    #    对**本题所属能力域**的优劣势总结 + **全局按题矩阵解读**各跑一次 Claude 落缓存,
+    #    榜单/矩阵页打开即读缓存(随任务完成实时刷新, 不必每次开页现算 Claude)。
+    #    fingerprint 未变则跳过不重算(省钱)。慢/失败只记日志, 不影响已落库的评分。
+    try:
+        from pipeline import analysis_prefetch as ANP
+        ANP.prefetch(con, only_tasks=[task_id])
+    except Exception:  # noqa: BLE001
+        logging.getLogger("competitor-eval").exception(
+            "分析文字预跑失败 task=%s", task_id)
 
     return {"status": "scored", "products": [b.product for b in blind],
             "count": len(blind), "findings": len(finds)}

@@ -260,6 +260,17 @@ CREATE TABLE IF NOT EXISTS attribution_cache (
     created_ts           REAL,
     PRIMARY KEY (task_id, baseline)
 );
+
+CREATE TABLE IF NOT EXISTS analysis_cache (
+    kind                 TEXT NOT NULL,      -- 'domain-summary' | 'matrix-reading'
+    scope                TEXT NOT NULL,      -- domain id(域总结) 或 '__all__'(矩阵解读)
+    baseline             TEXT NOT NULL,
+    scores_fingerprint   TEXT NOT NULL,      -- 相关 scores 指纹, 不符即失效重算
+    analysis_json        TEXT,              -- analysis_synth 产出 {text, engine, ...}
+    engine               TEXT,
+    created_ts           REAL,
+    PRIMARY KEY (kind, scope, baseline)
+);
 """
 
 
@@ -587,6 +598,60 @@ def all_cached_attributions(con: sqlite3.Connection,
             attr["cached_ts"] = row["created_ts"]
             out[row["task_id"]] = attr
     return out
+
+
+# --- 分析文字缓存(domain-summary / matrix-reading, Claude 生成) -----------
+def analysis_fingerprint(scores: list[dict], baseline: str = "vio",
+                         scope: str | None = None) -> str:
+    """分析文字所依赖的 scores 指纹: 相关分数变了指纹才变(缓存失效重算)。
+
+    scope=None(矩阵解读依赖全量)时取全部 scores; scope=域 id 时只取该域任务 —— 但域
+    过滤在调用方做, 这里对传入的 scores 子集统一算指纹。取 product+task+sample_score,
+    稳定排序 sha1。同批评测 -> 同指纹(命中); 任一分数/产品变 -> 失效。
+    """
+    key = sorted(
+        (str(s.get("product")), str(s.get("task_id")), s.get("sample_score"))
+        for s in (scores or []))
+    raw = json.dumps([baseline, scope or "__all__", key],
+                     ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def upsert_analysis_cache(con: sqlite3.Connection, *, kind: str, scope: str,
+                          baseline: str, scores_fingerprint: str,
+                          analysis: dict, engine: str | None = None) -> None:
+    """落库/更新一条分析文字缓存(kind+scope+baseline 唯一, 覆盖旧行)。"""
+    con.execute("DELETE FROM analysis_cache WHERE kind=? AND scope=? AND baseline=?",
+                (kind, scope, baseline))
+    con.execute(
+        """INSERT INTO analysis_cache (kind, scope, baseline, scores_fingerprint,
+           analysis_json, engine, created_ts) VALUES (?,?,?,?,?,?,?)""",
+        (kind, scope, baseline, scores_fingerprint,
+         json.dumps(analysis, ensure_ascii=False), engine, time.time()))
+    con.commit()
+
+
+def get_cached_analysis(con: sqlite3.Connection, kind: str, scope: str,
+                        baseline: str, fingerprint: str | None = None) -> dict | None:
+    """读分析文字缓存。fingerprint 给定且不符 -> None(失效, 让调用方重算);
+    fingerprint=None -> 不校验直接返回(用于展示旧缓存, 新鲜度由预跑保证)。"""
+    row = con.execute(
+        """SELECT scores_fingerprint, analysis_json, engine, created_ts
+           FROM analysis_cache WHERE kind=? AND scope=? AND baseline=?""",
+        (kind, scope, baseline)).fetchone()
+    if not row:
+        return None
+    if fingerprint is not None and row["scores_fingerprint"] != fingerprint:
+        return None
+    try:
+        obj = json.loads(row["analysis_json"] or "null")
+    except Exception:
+        return None
+    if isinstance(obj, dict):
+        obj["cached"] = True
+        obj["cached_ts"] = row["created_ts"]
+        obj["scores_fingerprint"] = row["scores_fingerprint"]
+    return obj
 
 
 # --- E (PRD 0004 二期): AI 预复核一致率日志 --------------------------------

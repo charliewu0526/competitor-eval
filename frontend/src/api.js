@@ -54,6 +54,17 @@ export const getDomainBoard = (baseline = "vio", windowDays) =>
     params: { baseline, ...(windowDays != null ? { window_days: windowDays } : {}) },
   }).then((r) => r.data);
 export const getScores = () => api.get("/scores").then((r) => r.data);
+// 评测报告升级: 按竞品雷达(纯数据) + 两处 Claude 分析文字。
+export const getCompetitorRadar = (baseline = "vio", domain) =>
+  api.get("/competitor-radar", {
+    params: { baseline, ...(domain ? { domain } : {}) },
+  }).then((r) => r.data);
+export const getDomainSummary = (baseline = "vio", domain) =>
+  api.get("/analysis/domain-summary", {
+    params: { baseline, ...(domain ? { domain } : {}) },
+  }).then((r) => r.data);
+export const getMatrixReading = (baseline = "vio") =>
+  api.get("/analysis/matrix-reading", { params: { baseline } }).then((r) => r.data);
 export const getScore = (task, product) =>
   api.get(`/score/${encodeURIComponent(task)}/${encodeURIComponent(product)}`).then((r) => r.data);
 export const getCost = () => api.get("/cost").then((r) => r.data);

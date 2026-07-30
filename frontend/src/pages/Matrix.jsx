@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Typography, Card, Spin, Alert, Empty, Tag } from "antd";
-import { getLeaderboard } from "../api";
+import { BulbOutlined } from "@ant-design/icons";
+import { getLeaderboard, getMatrixReading } from "../api";
 import { InfoTip } from "../glossary.jsx";
 
 function cellColor(score) {
@@ -14,9 +15,14 @@ function cellColor(score) {
 export default function Matrix() {
   const [lb, setLb] = useState(null);
   const [err, setErr] = useState(null);
+  const [reading, setReading] = useState(null);
+  const [readingLoading, setReadingLoading] = useState(true);
 
   useEffect(() => {
     getLeaderboard("vio").then(setLb).catch((e) => setErr(e.userMessage || String(e)));
+    getMatrixReading("vio").then((r) => {
+      setReading(r); setReadingLoading(false);
+    }).catch(() => setReadingLoading(false));
   }, []);
 
   if (err) return <Alert type="error" message="后端没连上" description={err} showIcon />;
@@ -77,6 +83,22 @@ export default function Matrix() {
           </p>
         </Card>
       )}
+
+      {readingLoading ? (
+        <div style={{ marginTop: 16, padding: "10px 14px", background: "#f6f9ff",
+          borderRadius: 6, color: "#8c8c8c" }}>
+          <Spin size="small" /> <span style={{ marginLeft: 8 }}>正在生成矩阵解读…</span>
+        </div>
+      ) : reading && reading.text ? (
+        <Alert type="info" showIcon icon={<BulbOutlined />} style={{ marginTop: 16 }}
+          message={<span>矩阵解读 <span style={{ color: "#8c8c8c", fontWeight: 400, fontSize: 12 }}>
+            (Claude 读最新评分自动生成{reading.cached ? "·缓存" : ""})</span></span>}
+          description={<span style={{ whiteSpace: "pre-wrap" }}>{reading.text}</span>} />
+      ) : reading && (reading.note || reading.dry_run) ? (
+        <div style={{ marginTop: 16, color: "#8c8c8c", fontSize: 13 }}>
+          {reading.note || "未配置分析模型,暂无法生成解读。"}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Typography, Card, Select, Spin, Alert, Empty, Tag, Row, Col, Descriptions,
-  List, Space, Statistic, Divider,
+  List, Space, Statistic, Divider, Segmented,
 } from "antd";
 import { Radar } from "@ant-design/plots";
-import { getScores, getScore } from "../api";
+import { getScores, getScore, getCompetitorRadar, getDomainBoard } from "../api";
 import { InfoTip } from "../glossary.jsx";
 
 const DIM_LABEL = {
   S1: "质量", S2: "效率", S3: "可靠性", S4: "自主性", S5: "体验",
 };
+const DIM_ORDER = ["S1", "S2", "S3", "S4", "S5"];
 
 function gateLabel(g) {
   if (g === "native-operable") return <Tag color="green">能参赛(环境够得着)</Tag>;
@@ -17,7 +18,92 @@ function gateLabel(g) {
   return <Tag>{g}</Tag>;
 }
 
-export default function ScoreDetail() {
+// ============ 按竞品雷达图(默认视图) ============
+function CompetitorRadar() {
+  const [radar, setRadar] = useState(null);
+  const [err, setErr] = useState(null);
+  const [domain, setDomain] = useState(null);   // null=全部域
+  const [domains, setDomains] = useState([]);
+  const [focus, setFocus] = useState("__all__"); // __all__=多竞品叠加, 或单个产品
+
+  useEffect(() => {
+    getDomainBoard("vio").then((d) => {
+      const ds = (d.boards || []).map((b) => ({ value: b.domain, label: b.label || b.domain }));
+      setDomains(ds);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setRadar(null);
+    getCompetitorRadar("vio", domain).then(setRadar).catch((e) => setErr(e.userMessage || String(e)));
+  }, [domain]);
+
+  const { chartData, products } = useMemo(() => {
+    if (!radar || !radar.products) return { chartData: [], products: [] };
+    const prods = radar.products;
+    const rows = [];
+    for (const p of prods) {
+      if (focus !== "__all__" && p.product !== focus) continue;
+      for (const dim of DIM_ORDER) {
+        const v = p.dims[dim];
+        if (v == null) continue;
+        rows.push({
+          product: p.is_baseline ? `${p.product} (我们)` : p.product,
+          dim: `${dim} ${DIM_LABEL[dim]}`,
+          score: v,
+        });
+      }
+    }
+    return { chartData: rows, products: prods };
+  }, [radar, focus]);
+
+  if (err) return <Alert type="error" message="后端没连上" description={err} showIcon />;
+  if (!radar) return <Spin size="large" style={{ display: "block", margin: "60px auto" }} />;
+
+  const focusOptions = [
+    { value: "__all__", label: "全部竞品叠加" },
+    ...products.map((p) => ({ value: p.product, label: p.is_baseline ? `${p.product}(我们)` : p.product })),
+  ];
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 16 }} wrap>
+        <span style={{ color: "#8c8c8c" }}>能力域:</span>
+        <Select
+          style={{ width: 200 }} allowClear placeholder="全部域(跨题平均)"
+          options={domains} value={domain} onChange={(v) => setDomain(v || null)}
+        />
+        <span style={{ color: "#8c8c8c", marginLeft: 12 }}>看:</span>
+        <Segmented
+          options={focusOptions.map((o) => o.label)}
+          value={(focusOptions.find((o) => o.value === focus) || focusOptions[0]).label}
+          onChange={(label) => setFocus((focusOptions.find((o) => o.label === label) || {}).value || "__all__")}
+        />
+      </Space>
+
+      {chartData.length === 0 ? (
+        <Card><Empty description="这个范围还没有五维评分。跑几道题、落库后自动出雷达图。" /></Card>
+      ) : (
+        <Card title={<span>能力五维 · 按竞品对比 <InfoTip title="每个竞品在五个维度(质量/效率/可靠性/自主性/体验)上的跨题平均分(0-5)。多个竞品叠在一张图上,一眼看出我们 Vio 每一维相对强弱。" /></span>}>
+          <Radar
+            data={chartData}
+            xField="dim" yField="score" seriesField="product" colorField="product"
+            meta={{ score: { min: 0, max: 5 } }}
+            area={{ visible: false }} point={{ size: 3 }}
+            legend={{ position: "top" }}
+            height={420}
+          />
+          <p style={{ color: "#8c8c8c", fontSize: 12, marginTop: 12, marginBottom: 0 }}>
+            分数 0–5,越往外越强。「我们」= Vio 基准。选能力域可只看该域;下拉「看」可单独查某个竞品。
+          </p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ============ 单题拆解(原视图, 选 产品@任务) ============
+function SingleTaskDetail() {
   const [list, setList] = useState(null);
   const [sel, setSel] = useState(null);     // "task||product"
   const [detail, setDetail] = useState(null);
@@ -46,30 +132,23 @@ export default function ScoreDetail() {
   }, [detail]);
 
   if (err) return <Alert type="error" message="后端没连上" description={err} showIcon />;
-  if (!list) return <Spin size="large" style={{ display: "block", margin: "80px auto" }} />;
+  if (!list) return <Spin size="large" style={{ display: "block", margin: "60px auto" }} />;
 
   const options = list.map((r) => ({
     value: `${r.task_id}||${r.product}`,
     label: `${r.product} @ ${r.task_id}`,
   }));
-
   const disag = (detail && detail.disagreement) || [];
   const defects = (detail && detail.defects) || [];
 
   return (
     <div>
-      <Typography.Title level={3} className="page-title">评分详情</Typography.Title>
-      <p className="page-sub">
-        拆开看一道题:五个维度各打几分、AI 评委挑出哪些毛病、评委之间是否吵起来了。
-      </p>
-
       <Select
         style={{ width: 360, marginBottom: 16 }}
         options={options} value={sel} onChange={setSel}
         placeholder="选一个 产品@任务"
         showSearch optionFilterProp="label"
       />
-
       {!detail ? (
         list.length === 0
           ? <Card><Empty description="还没有评分。先跑 pipeline 落库。" /></Card>
@@ -149,6 +228,28 @@ export default function ScoreDetail() {
           </Col>
         </Row>
       )}
+    </div>
+  );
+}
+
+export default function ScoreDetail() {
+  const [view, setView] = useState("竞品雷达对比");
+
+  return (
+    <div>
+      <Typography.Title level={3} className="page-title">评分详情</Typography.Title>
+      <p className="page-sub">
+        默认<b>按竞品看五维雷达</b> —— 多个竞品叠在一张图上,一眼看出我们 Vio 哪一维强、哪一维弱。
+        也可切到<b>单题拆解</b>看某一道题的评委打分与挑出的毛病。
+      </p>
+
+      <Segmented
+        style={{ marginBottom: 16 }}
+        options={["竞品雷达对比", "单题拆解"]}
+        value={view} onChange={setView}
+      />
+
+      {view === "竞品雷达对比" ? <CompetitorRadar /> : <SingleTaskDetail />}
     </div>
   );
 }
