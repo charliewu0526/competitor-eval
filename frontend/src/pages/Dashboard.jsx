@@ -26,7 +26,7 @@ export default function Dashboard() {
   return (
     <div>
       <Typography.Title level={3} className="page-title">总览</Typography.Title>
-      <p className="page-sub">一眼看清:测了几个对手、几道题、攒了多少待你拍板的发现。</p>
+      <p className="page-sub">一眼看清:测了几个对手、几道题、攒了多少待复核的发现。</p>
 
       <Row gutter={16}>
         <Col span={6}>
@@ -42,7 +42,7 @@ export default function Dashboard() {
         <Col span={6}>
           <Card hoverable onClick={() => nav("/findings")}>
             <Statistic
-              title={<span><BulbOutlined /> 待你拍板的发现</span>}
+              title={<span><BulbOutlined /> 待复核的发现</span>}
               value={ov.findings_undecided} suffix={`/ ${ov.findings}`}
               valueStyle={{ color: ov.findings_undecided ? "#fa8c16" : "#52c41a" }}
             />
