@@ -1,14 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Typography, Card, Tag, Spin, Alert, Empty, Select, Space, Table,
-  Tooltip, Divider, List, Button, Collapse,
+  Tooltip, Divider, List, Button, Collapse, Segmented, message as antdMessage,
 } from "antd";
 import {
   RiseOutlined, FallOutlined, GithubOutlined, WarningOutlined,
-  BulbOutlined, FileSearchOutlined, ThunderboltOutlined,
+  BulbOutlined, FileSearchOutlined, ThunderboltOutlined, ReloadOutlined,
 } from "@ant-design/icons";
 import { Link } from "react-router-dom";
-import { getGapReportTasks, getGapReport } from "../api";
+import {
+  getGapReportTasks, getGapReport, getGapReportOverview, prefetchGapAttribution,
+} from "../api";
 import { InfoTip } from "../glossary.jsx";
 
 // 差值 -> 颜色语义(绿=竞品领先该补齐 / 红=基线领先 / 灰=不可比)。
@@ -255,6 +257,48 @@ function AttributionBlock({ attribution, onRun, running, onSynth, synthing, synt
   );
 }
 
+// --- 全任务差距一览(差距报告增强)-----------------------------------------
+// 每题一行: 分差(红=竞品领先该补/绿=我们领先)、竞品领先标记、归因摘要(缓存里第一条
+// headline,只读缓存不实时算)、候选新功能数。行点击进单题详情。归因摘要为空 = 该题
+// 还没预跑缓存,提示可点「批量分析归因」。
+function OverviewTable({ rows, loading, onOpen }) {
+  if (loading) return <Spin style={{ display: "block", margin: "40px auto" }} />;
+  if (!rows) return null;
+  const cols = [
+    { title: "任务", dataIndex: "task_id", key: "task_id",
+      render: (t) => <a onClick={() => onOpen(t)}>{t}</a> },
+    { title: "能力域", dataIndex: "domain", key: "domain", width: 150,
+      render: (d) => d ? <Tag>{d}</Tag> : <Typography.Text type="secondary">—</Typography.Text> },
+    { title: "我们", dataIndex: "baseline_score", key: "base", width: 80,
+      render: (v) => v == null ? "—" : v },
+    { title: "最强竞品", key: "top", width: 160,
+      render: (_, r) => r.top_competitor
+        ? <span>{r.top_competitor} <b>{r.top_score}</b></span>
+        : <Typography.Text type="secondary">无</Typography.Text> },
+    { title: "分差", dataIndex: "diff", key: "diff", width: 110,
+      sorter: (a, b) => (a.diff ?? -999) - (b.diff ?? -999),
+      render: (d) => {
+        if (d == null) return <Typography.Text type="secondary">不可比</Typography.Text>;
+        if (d > 0) return <Tag color="red" icon={<RiseOutlined />}>竞品领先 +{d}</Tag>;
+        if (d < 0) return <Tag color="green">我们领先 {d}</Tag>;
+        return <Tag>持平</Tag>;
+      } },
+    { title: "竞品好在哪(归因摘要)", dataIndex: "attribution_summary", key: "attr",
+      render: (s, r) => s
+        ? <span style={{ color: "#595959" }}>{s}</span>
+        : (r.competitor_leads
+          ? <Typography.Text type="warning">未分析(点上方「批量分析归因」)</Typography.Text>
+          : <Typography.Text type="secondary">—</Typography.Text>) },
+    { title: "候选新功能", dataIndex: "candidate_count", key: "cand", width: 100,
+      render: (n) => n ? <Tag color="geekblue">{n}</Tag> : <Typography.Text type="secondary">0</Typography.Text> },
+  ];
+  return (
+    <Table rowKey="task_id" size="small" columns={cols} dataSource={rows}
+      pagination={{ pageSize: 30, hideOnSinglePage: true }} />
+  );
+}
+
+
 // --- 主页面 ---------------------------------------------------------------
 export default function GapReport() {
   const [taskList, setTaskList] = useState(null);
@@ -266,6 +310,36 @@ export default function GapReport() {
   const [runningAttr, setRunningAttr] = useState(false);
   const [synthing, setSynthing] = useState(false);
   const [synthResult, setSynthResult] = useState(null);
+  // 差距报告增强: 视图切换 + 全任务一览数据。
+  const [view, setView] = useState("overview");   // overview | detail
+  const [overview, setOverview] = useState(null);
+  const [loadingOv, setLoadingOv] = useState(false);
+  const [prefetching, setPrefetching] = useState(false);
+
+  const loadOverview = () => {
+    setLoadingOv(true);
+    getGapReportOverview()
+      .then((d) => setOverview(d.rows || []))
+      .catch((e) => setErr(e.userMessage || String(e)))
+      .finally(() => setLoadingOv(false));
+  };
+  useEffect(() => { loadOverview(); }, []);
+
+  // owner 手动批量预跑归因(首次填充缓存),完成后刷新一览。
+  const runPrefetch = () => {
+    setPrefetching(true);
+    antdMessage.loading({ content: "正在批量分析各题归因(读交付物调模型,较慢)…",
+      key: "pf", duration: 0 });
+    prefetchGapAttribution(false)
+      .then((st) => {
+        antdMessage.success({ content:
+          `预跑完成:新算 ${st.computed || 0} 题、已缓存 ${st.cached_hit || 0} 题、无竞品 ${st.no_competitor || 0} 题`,
+          key: "pf" });
+        loadOverview();
+      })
+      .catch((e) => antdMessage.error({ content: e.userMessage || String(e), key: "pf" }))
+      .finally(() => setPrefetching(false));
+  };
 
   // 按需触发归因(较慢,单独调带 attribution=true 的接口),结果并入当前报告。
   function runAttribution() {
@@ -302,9 +376,14 @@ export default function GapReport() {
   useEffect(() => {
     if (!taskId) return;
     setLoadingRep(true);
-    setAttribution(null);   // 换题清空上一题的归因结果
+    setAttribution(null);   // 换题先清空,下面若报告带缓存归因则自动填回
     getGapReport(taskId)
-      .then(setReport)
+      .then((rep) => {
+        setReport(rep);
+        // 差距报告增强: 报告若已带缓存归因(打开即有,指纹相符),自动显示免手点;
+        // 未命中(rep.attribution 为空)则保持 null,由 AttributionBlock 显示手动分析按钮兜底。
+        if (rep && rep.attribution) setAttribution(rep.attribution);
+      })
       .catch((e) => setErr(e.userMessage || String(e)))
       .finally(() => setLoadingRep(false));
   }, [taskId]);
@@ -340,14 +419,35 @@ export default function GapReport() {
       ) : (
         <>
           <Space style={{ marginBottom: 16 }} wrap>
-            <span style={{ color: "#8c8c8c" }}>选任务:</span>
-            <Select
-              style={{ minWidth: 320 }} value={taskId} onChange={setTaskId}
-              options={options}
+            <Segmented
+              value={view}
+              onChange={setView}
+              options={[
+                { label: "全任务一览", value: "overview" },
+                { label: "单题详情", value: "detail" },
+              ]}
             />
+            {view === "detail" && (
+              <>
+                <span style={{ color: "#8c8c8c" }}>选任务:</span>
+                <Select
+                  style={{ minWidth: 320 }} value={taskId} onChange={setTaskId}
+                  options={options}
+                />
+              </>
+            )}
+            {view === "overview" && (
+              <Button icon={<ReloadOutlined />} loading={prefetching}
+                onClick={runPrefetch}>
+                批量分析归因(填充缓存)
+              </Button>
+            )}
           </Space>
 
-          {loadingRep || !report ? (
+          {view === "overview" ? (
+            <OverviewTable rows={overview} loading={loadingOv}
+              onOpen={(tid) => { setTaskId(tid); setView("detail"); }} />
+          ) : (loadingRep || !report ? (
             <Spin style={{ display: "block", margin: "40px auto" }} />
           ) : (
             <>
@@ -403,7 +503,7 @@ export default function GapReport() {
                 )}
               </Card>
             </>
-          )}
+          ))}
         </>
       )}
     </div>

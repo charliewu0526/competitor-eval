@@ -13,6 +13,7 @@ Design notes:
   * honesty (h1_honesty) is its OWN column, never folded into capability score.
 """
 from __future__ import annotations
+import hashlib
 import json
 import os
 import pathlib
@@ -244,6 +245,21 @@ CREATE TABLE IF NOT EXISTS precheck_log (
     decided_ts           REAL
 );
 CREATE INDEX IF NOT EXISTS idx_precheck_target ON precheck_log(target_type, target_id);
+
+-- === 差距归因缓存 (差距报告增强) =====================================
+-- 归因(读双方交付物调 Claude 最强模型)慢且贵, 不能每次开报告页现算。这里把归因
+-- 结果按题落库缓存, 报告页/一览表直接读缓存自动显示。scores_fingerprint = 该题各
+-- 产品(产品集+sample_score+gate)的指纹: 分数/产品变了指纹才变 -> 缓存失效重算,
+-- 否则一直用缓存(省钱, 归因跟着评测结果走)。一题一行(task_id+baseline 唯一)。
+CREATE TABLE IF NOT EXISTS attribution_cache (
+    task_id              TEXT NOT NULL,
+    baseline             TEXT NOT NULL,
+    scores_fingerprint   TEXT NOT NULL,      -- 该题 scores 指纹, 不符即缓存失效
+    attribution_json     TEXT,              -- TaskAttribution.as_dict() 全文
+    engine               TEXT,
+    created_ts           REAL,
+    PRIMARY KEY (task_id, baseline)
+);
 """
 
 
@@ -497,6 +513,80 @@ def set_judgment(con: sqlite3.Connection, finding_id: int,
         (product_judgment, final_category, finding_id))
     con.commit()
     return cur.rowcount > 0
+
+
+# --- 差距归因缓存 (差距报告增强) ------------------------------------------
+def attribution_fingerprint(task_scores: list[dict], baseline: str = "vio") -> str:
+    """该题各产品评测状态的稳定指纹: 分数/产品集/gate 变了指纹才变。
+
+    只取影响归因的字段(product + sample_score + gate), 稳定排序后 sha1。
+    同一批评测结果 -> 同指纹(缓存命中); 任一产品分数/gate 变或增删产品 -> 指纹变
+    (缓存失效, 该重算归因)。与 baseline 无关的字段不进指纹, 避免无谓失效。
+    """
+    key = sorted(
+        (str(s.get("product")), s.get("sample_score"), str(s.get("gate")))
+        for s in (task_scores or []))
+    raw = json.dumps([baseline, key], ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def upsert_attribution_cache(con: sqlite3.Connection, *, task_id: str,
+                             baseline: str, scores_fingerprint: str,
+                             attribution: dict, engine: str | None = None) -> None:
+    """落库/更新一题的归因缓存(task_id+baseline 唯一, 覆盖旧行)。"""
+    con.execute("DELETE FROM attribution_cache WHERE task_id=? AND baseline=?",
+                (task_id, baseline))
+    con.execute(
+        """INSERT INTO attribution_cache (task_id, baseline, scores_fingerprint,
+           attribution_json, engine, created_ts) VALUES (?,?,?,?,?,?)""",
+        (task_id, baseline, scores_fingerprint,
+         json.dumps(attribution, ensure_ascii=False), engine, time.time()))
+    con.commit()
+
+
+def get_cached_attribution(con: sqlite3.Connection, task_id: str,
+                           baseline: str, fingerprint: str) -> dict | None:
+    """读一题的归因缓存: 仅当存的指纹与当前 fingerprint 相符才返回(否则视为失效 None)。
+
+    指纹不符 = 该题评测结果已变, 缓存归因过时, 返回 None 让调用方重算。
+    """
+    row = con.execute(
+        """SELECT scores_fingerprint, attribution_json, engine, created_ts
+           FROM attribution_cache WHERE task_id=? AND baseline=?""",
+        (task_id, baseline)).fetchone()
+    if not row:
+        return None
+    if row["scores_fingerprint"] != fingerprint:
+        return None
+    try:
+        attr = json.loads(row["attribution_json"] or "null")
+    except Exception:
+        return None
+    if isinstance(attr, dict):
+        attr["cached"] = True
+        attr["cached_ts"] = row["created_ts"]
+    return attr
+
+
+def all_cached_attributions(con: sqlite3.Connection,
+                            baseline: str = "vio") -> dict:
+    """取某 baseline 下全部题的归因缓存 {task_id: attribution_dict}(供一览表批量读)。
+
+    不校验指纹(一览表只要摘要, 新鲜度由预跑保证); 指纹随行带出供调用方按需判。
+    """
+    out: dict = {}
+    for row in con.execute(
+            """SELECT task_id, scores_fingerprint, attribution_json, created_ts
+               FROM attribution_cache WHERE baseline=?""", (baseline,)):
+        try:
+            attr = json.loads(row["attribution_json"] or "null")
+        except Exception:
+            attr = None
+        if isinstance(attr, dict):
+            attr["scores_fingerprint"] = row["scores_fingerprint"]
+            attr["cached_ts"] = row["created_ts"]
+            out[row["task_id"]] = attr
+    return out
 
 
 # --- E (PRD 0004 二期): AI 预复核一致率日志 --------------------------------

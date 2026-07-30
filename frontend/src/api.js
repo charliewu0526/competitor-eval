@@ -192,6 +192,15 @@ export const getReportConsole = () =>
 // force=true:有 in-flight 领题/评测时仍强制上线(否则返回 outcome:"deferred")。
 export const approveReport = (id, force = false) =>
   api.post(`/reports/${id}/approve`, { force }).then((r) => r.data);
+// 差距报告增强: 全任务差距一览(归因摘要从缓存读,快)。
+export const getGapReportOverview = (baseline) =>
+  api.get("/gap-report-overview", { params: baseline ? { baseline } : {} })
+    .then((r) => r.data);
+// owner 手动批量预跑归因落缓存(首次填充/换模型 force 重算,慢)。
+export const prefetchGapAttribution = (force = false) =>
+  api.post("/gap-report-prefetch", null, { params: { force }, timeout: 600000 })
+    .then((r) => r.data);
+
 // 拒绝 → needs-human 附留言;retry=true 让 AI 按留言重试一次。
 export const rejectReport = (id, message, retry = false) =>
   api.post(`/reports/${id}/reject`, { message, retry }).then((r) => r.data);

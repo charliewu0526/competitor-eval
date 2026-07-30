@@ -249,19 +249,28 @@ def list_gap_report_tasks(baseline: str = "vio"):
 def get_gap_report(task_id: str, baseline: str = "vio", attribution: bool = False):
     """MR-11 (#47): 一道对比任务的完整差距报告 (派生视图, 引擎不改).
 
-    attribution=true 时附「差距归因层」(gap_attribution): 读双方交付物原文,调
-    Claude 最强模型分析竞品比 vio 好在哪一步/多做了什么(疑似定性 + 强制原文引用,
-    PM 拍板)。较慢(需读产物 + 调模型),故默认关闭,前端按需触发。
+    差距报告增强: 归因**默认从缓存读, 打开即自动显示**——先按当前 scores 指纹查
+    attribution_cache, 命中(指纹相符=评测结果没变)则直接带进 response.attribution
+    (无需现算)。未命中(从没预跑 / 评测刚变缓存失效)时:attribution=true 才实时算
+    (前端手动触发兜底), 否则 attribution=null 让前端显示「分析」按钮。
     """
     con = _con()
     scores = store.all_scores(con)
     finds = store.all_findings(con)
     if not any(s.get("task_id") == task_id for s in scores):
         raise HTTPException(404, "no scores for this task")
+    # 先查缓存: 按本题当前 scores 指纹, 命中即自动带出归因(打开即显示)。
+    task_scores = [s for s in scores if s.get("task_id") == task_id]
+    fp = store.attribution_fingerprint(task_scores, baseline)
+    cached = store.get_cached_attribution(con, task_id, baseline, fp)
+    # 命中缓存 -> 用缓存(不现算); 未命中且请求 attribution=true -> 实时算兜底。
     rep = GAP.build_report(task_id, scores, finds,
                            registry=REG.default_registry(), baseline=baseline,
-                           with_attribution=attribution)
-    return rep.as_dict()
+                           with_attribution=(attribution and cached is None))
+    out = rep.as_dict()
+    if cached is not None:
+        out["attribution"] = cached          # 缓存归因(带 cached=true 标记)
+    return out
 
 
 @app.get("/api/probes")
@@ -702,6 +711,17 @@ def _score_assignment_into_board(con, assignment_id: str) -> dict:
         logging.getLogger("competitor-eval").exception(
             "自动重建抽查队列失败 task=%s", task_id)
 
+    # 6. 差距归因增量预跑(差距报告增强): 本题 scores 刚变, 指纹已变 -> 缓存失效,
+    #    这里只对**本题**跑一次归因落缓存, 报告页/一览表打开即读缓存自动显示,
+    #    不必每次开页现算。归因慢(读交付物调 Claude), 但此刻已在后台评分线程里
+    #    (_score_assignment_bg), 不阻塞前台; 失败只记日志, 不影响已落库的评分。
+    try:
+        from pipeline import attribution_prefetch as APF
+        APF.prefetch(con, only_tasks=[task_id])
+    except Exception:  # noqa: BLE001
+        logging.getLogger("competitor-eval").exception(
+            "差距归因预跑失败 task=%s", task_id)
+
     return {"status": "scored", "products": [b.product for b in blind],
             "count": len(blind), "findings": len(finds)}
 
@@ -1016,6 +1036,82 @@ def synthesize_methods(task_id: str, baseline: str = "vio",
     created = MSYN.synthesize_from_attribution(con, task_id, rep.as_dict().get("attribution"))
     return {"task_id": task_id, "created": [_method_view(m) for m in created],
             "count": len(created)}
+
+
+@app.get("/api/gap-report-overview")
+def gap_report_overview(baseline: str = "vio"):
+    """差距报告增强: 全任务差距一览(派生视图, 一眼看清各题差距 + 竞品好在哪)。
+
+    每题一行: {task_id, domain, baseline_score, top_competitor, top_score, diff,
+    competitor_leads(有竞品≥基线), attribution_summary(缓存里第一条归因 headline,
+    只读缓存不实时算), candidate_count(该题 capability-gap findings 数)}。
+    归因摘要**只从 attribution_cache 读** —— 一览打开要快, 不逐题调 Claude;
+    没预跑缓存的题摘要为空(前端提示可点批量预跑)。
+    """
+    con = _con()
+    scores = store.all_scores(con)
+    finds = store.all_findings(con)
+    cached = store.all_cached_attributions(con, baseline)
+
+    from pipeline import capability_matrix as CM
+    by_task: dict = {}
+    for s in scores:
+        by_task.setdefault(s.get("task_id"), []).append(s)
+    # 每题 capability-gap 候选数(subject 非 baseline 的 capability-gap finding)。
+    cand_by_task: dict = {}
+    for f in finds:
+        if f.get("suspected_category") == "capability-gap":
+            cand_by_task[f.get("task_id")] = cand_by_task.get(f.get("task_id"), 0) + 1
+
+    rows = []
+    for task_id, ts in by_task.items():
+        base = next((s for s in ts if s.get("product") == baseline
+                     and s.get("sample_score") is not None), None)
+        base_val = base["sample_score"] if base else None
+        # 最强竞品(排除 baseline 与 cannot-reach)。
+        comps = [s for s in ts if s.get("product") != baseline
+                 and s.get("sample_score") is not None
+                 and s.get("gate") != "cannot-reach"]
+        top = max(comps, key=lambda s: s["sample_score"], default=None)
+        top_score = top["sample_score"] if top else None
+        diff = (top_score - base_val) if (top_score is not None and base_val is not None) else None
+        # 归因摘要: 缓存里第一条 point 的 headline(只读缓存)。
+        attr = cached.get(task_id) or {}
+        pts = attr.get("points") or []
+        summary = pts[0].get("headline") if pts else (attr.get("note") or "")
+        rows.append({
+            "task_id": task_id,
+            "domain": CM.task_domain(task_id),
+            "baseline_score": base_val,
+            "top_competitor": top["product"] if top else None,
+            "top_score": top_score,
+            "diff": diff,
+            "competitor_leads": bool(diff is not None and diff > 0),
+            "attribution_summary": summary,
+            "attribution_cached": bool(attr),
+            "candidate_count": cand_by_task.get(task_id, 0),
+        })
+    # 竞品领先(diff 大)的题排前, 便于一眼看该补哪。
+    rows.sort(key=lambda r: (r["diff"] if r["diff"] is not None else -999), reverse=True)
+    return {"baseline": baseline, "rows": rows, "count": len(rows)}
+
+
+@app.post("/api/gap-report-prefetch")
+def gap_report_prefetch(baseline: str = "vio", force: bool = False,
+                        user=Depends(current_user)):
+    """差距报告增强: owner 手动批量预跑归因落缓存(首次填充 / 换模型后 force 重算)。
+
+    平时归因由收口入库自动增量预跑; 这个端点用于一次性把存量题的归因补齐, 或改归因
+    口径后强制全量重算。只对有竞品≥基线且指纹未命中的题跑, 慢(逐题调 Claude)但只在
+    owner 主动点时触发, 不偷跑烧钱。
+    """
+    try:
+        RBAC.require(user, "view_report_console")
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    from pipeline import attribution_prefetch as APF
+    stats = APF.prefetch(_con(), baseline=baseline, force=force)
+    return stats
 
 
 @app.post("/api/vio-gap/{task_id}/classify")
