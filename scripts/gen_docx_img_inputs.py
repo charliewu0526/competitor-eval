@@ -86,9 +86,12 @@ def _img(path: pathlib.Path, lines, *, size=(700, 460), bg=(250, 250, 250),
     for item in lines:
         # 兼容两种写法: 纯字符串(旧 T15 调用)或 (text, is_cjk, is_header) 元组。
         if isinstance(item, str):
-            text, is_cjk, is_header = item, any(ord(c) > 127 for c in item), False
+            text, _flag, is_header = item, False, False
         else:
-            text, is_cjk, is_header = item
+            text, _flag, is_header = item
+        # 任一行只要含非 ASCII 就走 CJK 字体(STHeiti 同时能渲染拉丁), 避免中英
+        # 混排时拉丁字体画不出中文而出现 □□(收据字段必须清晰可读)。
+        is_cjk = any(ord(c) > 127 for c in text)
         fsize = 40 if is_header else 30
         font = _load_font(fsize, cjk=is_cjk)
         d.text((36, y), text, fill=(15, 15, 15), font=font)
