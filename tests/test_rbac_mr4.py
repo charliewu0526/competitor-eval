@@ -31,6 +31,7 @@ def _u(role):
 # 用来跑「每种角色 × 每类操作」的全矩阵, 而非只抽查几个点。
 _MIN_ROLE = {
     "promote_user": "owner",
+    "delete_user": "owner",
     "issue_invite": "owner",
     "calibrate_golden": "owner",
     "authorize_reviewer": "owner",

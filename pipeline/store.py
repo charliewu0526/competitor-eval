@@ -851,6 +851,19 @@ def all_users(con) -> list[dict]:
     return [dict(r) for r in con.execute("SELECT * FROM users ORDER BY created_ts, id")]
 
 
+def delete_user(con, user_id: str) -> bool:
+    """删除一个用户(PM 从成员名单移除)。返回是否真删到行(不存在 -> False, 幂等)。
+
+    只删 users 行本身;该用户历史领取/提交(assignments.claimed_by /
+    submissions.submitted_by)保留原 id 作追责痕迹(不级联清空, 立身之本:
+    已发生的评测记录不能因删人而蒸发)。合法性守卫(不能删自己 / 末位 owner)
+    在 rbac.remove_user 那层, 此处只做落地。
+    """
+    cur = con.execute("DELETE FROM users WHERE id=?", (user_id,))
+    con.commit()
+    return cur.rowcount > 0
+
+
 def upsert_assignment(con, a: dict) -> None:
     """Persist an Assignment. Idempotent on id.
 
@@ -999,6 +1012,26 @@ def upsert_submission(con, s: dict) -> int | str:
     row = con.execute("SELECT id FROM submissions WHERE assignment_id=? AND product=?",
                       (s["assignment_id"], s["product"])).fetchone()
     return row["id"]
+
+
+def delete_submission(con, assignment_id: str, product: str) -> dict | None:
+    """删掉一份 Submission(收口前撤回某产品的已上传产物)。
+
+    返回被删行的 artifact_path/log_bundle_path(供 Web 层删磁盘文件);该产品
+    本没交过 -> None(幂等: 删不存在的不报错)。只删库行, 不碰磁盘(文件删除由
+    调用方按返回路径处理, 与"库里只存路径引用"分工一致)。
+    """
+    row = con.execute(
+        "SELECT artifact_path, log_bundle_path FROM submissions "
+        "WHERE assignment_id=? AND product=?",
+        (assignment_id, product)).fetchone()
+    if not row:
+        return None
+    paths = dict(row)
+    con.execute("DELETE FROM submissions WHERE assignment_id=? AND product=?",
+                (assignment_id, product))
+    con.commit()
+    return paths
 
 
 def executors_for_task_product(con, task_id: str, product: str) -> list[str]:

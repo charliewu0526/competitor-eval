@@ -144,6 +144,10 @@ export const abandonAssignment = (id) =>
 export const submitAssignment = (id) =>
   api.post(`/assignments/${encodeURIComponent(id)}/submit`, null,
     { timeout: 180000 }).then((r) => r.data);
+// 撤回某产品已上传的产物(收口前反悔/传错重来)。仅持有者、仅 claimed 可删。
+export const deleteSubmission = (id, product) =>
+  api.delete(`/assignments/${encodeURIComponent(id)}/submissions/${encodeURIComponent(product)}`)
+    .then((r) => r.data);
 export const getSubmissionProgress = (id) =>
   api.get(`/assignments/${encodeURIComponent(id)}/submissions`).then((r) => r.data);
 // 提交一份产品交付(multipart:产物 + 日志包 + 元数据)。
@@ -156,6 +160,9 @@ export const postSubmission = (id, formData) =>
 export const getUsers = () => api.get("/users").then((r) => r.data);
 export const promoteUser = (userId, role) =>
   api.post(`/users/${encodeURIComponent(userId)}/role`, { role }).then((r) => r.data);
+// 从成员名单删除一个用户(owner 独占;后端挡删自己/末位 owner)。
+export const deleteUser = (userId) =>
+  api.delete(`/users/${encodeURIComponent(userId)}`).then((r) => r.data);
 export const issueInvite = (note, ttlSeconds) =>
   api.post("/invites", {
     ...(note ? { note } : {}),

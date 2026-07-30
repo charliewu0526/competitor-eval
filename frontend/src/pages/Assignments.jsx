@@ -10,8 +10,10 @@ import {
 import {
   getAssignments, materializeAssignment, claimAssignment, abandonAssignment,
   submitAssignment, getSubmissionProgress, postSubmission, getCatalogTask,
-  downloadTaskInput,
+  downloadTaskInput, deleteSubmission,
 } from "../api";
+import { Popconfirm } from "antd";
+import { DeleteOutlined } from "@ant-design/icons";
 import { useAuth } from "../auth.jsx";
 import { InfoTip } from "../glossary.jsx";
 
@@ -314,12 +316,28 @@ function AssignmentCard({ a, me, busy, onClaim, onAbandon, onSubmitFinal, onChan
           <Space wrap>
             <span style={{ color: "#8c8c8c" }}>逐个产品提交产物:</span>
             {(a.products || []).map((p) => (
-              <Button key={p} size="small"
-                type={submitted.has(p) ? "default" : "primary"} ghost={submitted.has(p)}
-                icon={submitted.has(p) ? <RollbackOutlined /> : <InboxOutlined />}
-                onClick={() => setSubmitFor(p)}>
-                {submitted.has(p) ? `重交 ${p}` : `提交 ${p}`}
-              </Button>
+              <Space key={p} size={2}>
+                <Button size="small"
+                  type={submitted.has(p) ? "default" : "primary"} ghost={submitted.has(p)}
+                  icon={submitted.has(p) ? <RollbackOutlined /> : <InboxOutlined />}
+                  onClick={() => setSubmitFor(p)}>
+                  {submitted.has(p) ? `重交 ${p}` : `提交 ${p}`}
+                </Button>
+                {submitted.has(p) && (
+                  <Popconfirm title={`删除 ${p} 已上传的产物?`}
+                    description="收口前可撤回;删除后需重新提交才能收口。"
+                    okText="删除" okButtonProps={{ danger: true }} cancelText="取消"
+                    onConfirm={async () => {
+                      try {
+                        await deleteSubmission(a.id, p);
+                        message.success(`已删除 ${p} 的产物`);
+                        loadProgress(); onChanged && onChanged();
+                      } catch (e) { message.error(e.userMessage || String(e)); }
+                    }}>
+                    <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                  </Popconfirm>
+                )}
+              </Space>
             ))}
           </Space>
           {submitFor && (
@@ -393,13 +411,54 @@ export default function Assignments() {
             : "还没有可领取任务。等 PM 从任务清单铸造后,这里就能领了。"} />
         </Card>
       ) : (
-        rows.map((a) => (
-          <AssignmentCard
-            key={a.id} a={a} me={user} busy={busyId === a.id}
-            onClaim={() => doClaim(a.id)} onAbandon={() => doAbandon(a.id)}
-            onSubmitFinal={() => doSubmitFinal(a.id)} onChanged={load}
-          />
-        ))
+        (() => {
+          // 反馈 ur-c8c84324bb39:不主动把任务推进「我的任务」——只有本人领取(claimed/
+          // submitted 且 claimed_by===me)才算「我的活」;其余 open 单归入公共池分区,
+          // 明确区分「我领的」与「大家都能领的」,不让别人领的活混进我的列表。
+          const mineRows = rows.filter((a) => a.claimed_by === user?.id);
+          // 进行中(claimed)与已完成(submitted)分开:已完成的收进可展开集合,
+          // 不占据主视线(反馈 ur-09ec1c83aa36:做完的收起、需要时再展开)。
+          const activeRows = mineRows.filter((a) => a.status === "claimed");
+          const doneRows = mineRows.filter((a) => a.status === "submitted");
+          const openRows = rows.filter((a) => a.status === "open" && a.claimed_by !== user?.id);
+          const card = (a) => (
+            <AssignmentCard
+              key={a.id} a={a} me={user} busy={busyId === a.id}
+              onClaim={() => doClaim(a.id)} onAbandon={() => doAbandon(a.id)}
+              onSubmitFinal={() => doSubmitFinal(a.id)} onChanged={load}
+            />
+          );
+          return (
+            <>
+              <Typography.Title level={5} style={{ marginTop: 0 }}>
+                我进行中的({activeRows.length})
+              </Typography.Title>
+              {activeRows.length === 0 ? (
+                <Card style={{ marginBottom: 16 }}>
+                  <Empty description="你没有进行中的任务。去下面公共池或『任务清单』领一道。" />
+                </Card>
+              ) : activeRows.map(card)}
+
+              {doneRows.length > 0 && (
+                <Collapse ghost style={{ marginBottom: 16 }}
+                  items={[{
+                    key: "done",
+                    label: `我已完成收口的(${doneRows.length}) — 点击展开`,
+                    children: doneRows.map(card),
+                  }]} />
+              )}
+
+              <Typography.Title level={5}>
+                公共池 · 待领取({openRows.length})
+              </Typography.Title>
+              {openRows.length === 0 ? (
+                <Card>
+                  <Empty description="公共池暂无待领取任务。" />
+                </Card>
+              ) : openRows.map(card)}
+            </>
+          );
+        })()
       )}
     </div>
   );

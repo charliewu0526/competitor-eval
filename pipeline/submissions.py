@@ -143,6 +143,31 @@ def submit_product(con, *, assignment_id: str, product: str,
     return _submission_row(con, assignment_id, product)
 
 
+def delete_product(con, *, assignment_id: str, product: str,
+                   requested_by: str | None = None) -> dict | None:
+    """收口前撤回某产品已上传的产物(删这份 Submission)。
+
+    守卫顺序(与 submit_product 对称,谁领谁改):
+      1. Assignment 存在 —— 否则 NotSubmittable。
+      2. 仍处于 claimed(未收口)—— submitted 之后不可再改(收口后产物冻结)。
+      3. 本人持有 —— 只有领取者可删自己的产物。
+    删掉该产品的 Submission 行,返回被删行的文件路径(供 Web 层删磁盘);该产品
+    本没交过 -> None(幂等)。product 是否在参赛集不再校验(删本就存在的行即可)。
+    """
+    a = store.get_assignment(con, assignment_id)
+    if a is None:
+        raise NotSubmittable(f"Assignment 不存在: {assignment_id!r}")
+    if a.get("status") != "claimed":
+        raise NotSubmittable(
+            f"Assignment {assignment_id!r} 当前 {a.get('status')!r}, "
+            f"只有 claimed(已领取未收口)可撤回产物(收口后产物已冻结)")
+    if requested_by is not None and a.get("claimed_by") != requested_by:
+        raise NotSubmittable(
+            f"只有领取者可撤回产物: {assignment_id!r} 归 {a.get('claimed_by')!r}, "
+            f"非 {requested_by!r}(谁领谁改)")
+    return store.delete_submission(con, assignment_id, product)
+
+
 def _submission_row(con, assignment_id: str, product: str) -> dict:
     for row in store.submissions_for(con, assignment_id):
         if row.get("product") == product:

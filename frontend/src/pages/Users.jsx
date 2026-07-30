@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   Typography, Card, Tag, Spin, Alert, Button, Space, Table, message,
-  Modal, Input, Select, Tooltip, Divider,
+  Modal, Input, Select, Tooltip, Divider, Popconfirm,
 } from "antd";
 import {
-  ReloadOutlined, UserAddOutlined, CopyOutlined, LinkOutlined,
+  ReloadOutlined, UserAddOutlined, CopyOutlined, LinkOutlined, DeleteOutlined,
 } from "@ant-design/icons";
-import { getUsers, promoteUser, issueInvite } from "../api";
+import { getUsers, promoteUser, issueInvite, deleteUser } from "../api";
 import { useAuth } from "../auth.jsx";
 
 const ROLE_LABEL = {
@@ -134,6 +134,29 @@ export default function Users() {
     { title: "当前角色", dataIndex: "role", render: (r) => roleTag(r) },
     { title: "改角色", key: "promote",
       render: (_, r) => <PromoteCell row={r} meId={user?.id} onDone={load} /> },
+    { title: "删除", key: "delete", width: 120,
+      render: (_, r) => {
+        const isSelf = r.id === user?.id;
+        return (
+          <Popconfirm title={`从成员名单删除 ${r.name || r.id}?`}
+            description="该用户将无法再登录;其历史领取/提交记录会保留(追责痕迹不丢)。"
+            okText="删除" okButtonProps={{ danger: true }} cancelText="取消"
+            disabled={isSelf}
+            onConfirm={async () => {
+              try {
+                await deleteUser(r.id);
+                message.success(`已删除成员 ${r.name || r.id}`);
+                load();
+              } catch (e) { message.error(e.userMessage || String(e)); }
+            }}>
+            <Tooltip title={isSelf ? "不能删除自己" : "从成员名单移除该用户"}>
+              <Button size="small" danger icon={<DeleteOutlined />} disabled={isSelf}>
+                删除
+              </Button>
+            </Tooltip>
+          </Popconfirm>
+        );
+      } },
   ];
 
   return (

@@ -191,7 +191,10 @@ export default function ReportConsole() {
         </Space>
       ),
     },
-    { title: "提交者", dataIndex: "submitter", width: 140 },
+    {
+      title: "提交者", dataIndex: "submitter_name", width: 140,
+      render: (name, r) => name || r.submitter || "—",
+    },
     {
       title: "提交时间", dataIndex: "created_ts", width: 180,
       render: fmtTs,

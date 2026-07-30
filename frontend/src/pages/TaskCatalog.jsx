@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Card, Collapse, Segmented, Tag, Typography, Spin, Empty, Space, Alert,
   Button, message,
@@ -177,8 +176,9 @@ export default function TaskCatalog() {
     try {
       await claimFromCatalog(taskId, product);
       setClaimed((prev) => new Set(prev).add(`${taskId}::${product}`));
-      message.success(`已领取 ${product},去『我的任务』提交这个产品的产物`);
-      nav("/assignments");
+      // 不再自动跳转 —— 让用户可连续领多个产品/多道题(反馈 ur-715c64f0e62c);
+      // 想去交付时自行点『我的任务』。
+      message.success(`已领取 ${product}(可继续领,交付时去『我的任务』)`);
     } catch (e) {
       // 已被自己领过(后端 409 含"已被你领取")也标为已领,按钮置灰不再诱导重复点。
       if (/已被你领取/.test(e.userMessage || String(e))) {
@@ -234,7 +234,7 @@ export default function TaskCatalog() {
                 </span>
               ),
               children: <TaskPanel task={t} canClaim={canClaim}
-                onClaim={onClaim} claiming={claiming === t.task_id} />,
+                onClaim={onClaim} claiming={claiming} claimed={claimed} />,
             }))}
           />
         </Card>

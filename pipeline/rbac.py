@@ -33,6 +33,7 @@ class PermissionDenied(Exception):
 PERMISSIONS: dict[str, str] = {
     # --- owner 独占的危险开关 (story 5, ADR-0014) --------------------------
     "promote_user":          "owner",   # 角色提升 / 降权 (story 4)
+    "delete_user":           "owner",   # 从成员名单删除用户 (owner 独占)
     "issue_invite":          "owner",   # 签发私发注册链接 (story 2)
     "calibrate_golden":      "owner",   # 黄金集校准 / 重校准 (story 5/33)
     "authorize_reviewer":    "owner",   # 评委授权 / 降权 (story 5)
@@ -108,3 +109,29 @@ def promote(con, *, actor: dict | None, target_user_id: str,
             raise PermissionDenied("系统至少需保留一位 owner, 不能降走最后一个")
     store.set_user_role(con, target_user_id, new_role)
     return store.get_user(con, target_user_id)
+
+
+def remove_user(con, *, actor: dict | None, target_user_id: str) -> dict:
+    """owner 从成员名单删除一个用户。返回被删用户 dict(供 Web 层回显)。
+
+    守卫(fail fast):
+    - actor 必须有 delete_user 权限(owner)—— 否则 PermissionDenied。
+    - 不能删自己 —— 防 owner 手滑把自己删掉丢失管理权(PermissionDenied)。
+    - 目标用户必须存在 —— 否则 ValueError。
+    - 不能删系统最后一个 owner —— 否则谁都提升不了人/签发不了链接, 系统锁死
+      (与 promote 的末位 owner 保护同源, PermissionDenied)。
+    该用户历史领取/提交记录保留(store.delete_user 只删 users 行), 追责痕迹不蒸发。
+    """
+    actor = require(actor, "delete_user")
+    target = store.get_user(con, target_user_id)
+    if target is None:
+        raise ValueError(f"用户不存在: {target_user_id!r}")
+    if actor and actor.get("id") == target_user_id:
+        raise PermissionDenied("不能删除自己(避免误删丢失管理权)")
+    if target["role"] == "owner":
+        other_owners = [u for u in store.all_users(con)
+                        if u["role"] == "owner" and u["id"] != target_user_id]
+        if not other_owners:
+            raise PermissionDenied("系统至少需保留一位 owner, 不能删走最后一个")
+    store.delete_user(con, target_user_id)
+    return target

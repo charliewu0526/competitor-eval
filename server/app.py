@@ -451,6 +451,23 @@ def promote_user(user_id: str, body: PromoteIn, user=Depends(current_user)):
             "role": updated["role"]}
 
 
+@app.delete("/api/users/{user_id}")
+def delete_user_endpoint(user_id: str, user=Depends(current_user)):
+    """owner 从成员名单删除一个用户。
+
+    守卫在 RBAC.remove_user: 非 owner -> 403; 删自己 / 删最后一个 owner -> 403;
+    用户不存在 -> 404。该用户历史领取/提交记录保留(只删 users 行, 追责痕迹不蒸发)。
+    """
+    try:
+        removed = RBAC.remove_user(_con(), actor=user, target_user_id=user_id)
+    except RBAC.PermissionDenied as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"deleted": True, "id": removed["id"],
+            "name": removed.get("name"), "role": removed["role"]}
+
+
 # === MR-6 (#42) 并发领取 + Assignment 状态机 (ADR-0015) ===================
 def _assignment_view(a: dict) -> dict:
     """对外投影: 只暴露状态机需要的字段 (含参赛产品集)。"""
@@ -868,6 +885,33 @@ async def submit_submission(
         "id": row["id"], "assignment_id": assignment_id, "product": product,
         "artifact_path": row.get("artifact_path"),
         "log_bundle_path": row.get("log_bundle_path"),
+        "progress": SUB.submission_progress(con, assignment_id),
+    }
+
+
+@app.delete("/api/assignments/{assignment_id}/submissions/{product}")
+def delete_submission_endpoint(assignment_id: str, product: str,
+                               user=rbac("submit")):
+    """撤回某产品已上传的产物(收口前反悔 / 传错文件重来)。
+
+    反馈 ur-c8e74c24300c: 收口前用户需要能改/删已上传的文件。「改」早已支持
+    (同产品重交覆盖), 这里补上「删」。守卫: 仅持有者、仅 claimed(未收口)可删
+    (submissions.delete_product), 删库行 + 清磁盘。删不存在的产物幂等返回。
+    """
+    con = _con()
+    try:
+        paths = SUB.delete_product(con, assignment_id=assignment_id,
+                                   product=product, requested_by=user["id"])
+    except SUB.NotSubmittable as e:
+        code = 404 if "不存在" in str(e) else 409
+        raise HTTPException(code, str(e))
+    # 清磁盘目录(库里只存路径, 文件删除在 Web 层按 artifact_store 约定做)。
+    if paths is not None:
+        ART.delete_product_uploads(assignment_id=assignment_id, product=product)
+    return {
+        "deleted": paths is not None,
+        "assignment_id": assignment_id,
+        "product": product,
         "progress": SUB.submission_progress(con, assignment_id),
     }
 
@@ -1634,10 +1678,18 @@ def report_console(user=rbac("view_report_console")):
     """
     con = _con()
     rows = REPORTS.list_for_console(con)
+    # 提交者从 user id 解析成人话名字, 反馈台好分辨(解析不到回退原 id)。
+    _name_cache: dict[str, str] = {}
     for row in rows:
         rid = row.get("id")
         row["screenshot_count"] = len(ART.list_report_uploads(rid, "screenshot"))
         row["has_log"] = bool(ART.list_report_uploads(rid, "log"))
+        sub = row.get("submitter")
+        if sub:
+            if sub not in _name_cache:
+                u = store.get_user(con, sub)
+                _name_cache[sub] = (u.get("name") if u and u.get("name") else sub)
+            row["submitter_name"] = _name_cache[sub]
     return rows
 
 

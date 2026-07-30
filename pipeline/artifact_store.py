@@ -63,6 +63,21 @@ def save_upload(*, assignment_id: str, product: str, kind: str,
     return str(p.resolve())
 
 
+def delete_product_uploads(*, assignment_id: str, product: str,
+                           root: pathlib.Path | None = None) -> None:
+    """删掉一个 (assignment, product) 的全部落盘产物(撤回产物时清磁盘)。
+
+    删 <root>/<assignment_id>/<product>/ 整个目录(artifact + log_bundle)。目录
+    不存在 -> 静默返回(幂等)。路径段走同一套清洗, 只在 upload_root 内操作, 不越界。
+    """
+    import shutil
+    base = (root or upload_root())
+    d = base / _safe_seg(assignment_id) / _safe_seg(product)
+    d = d.resolve()
+    if d.is_dir() and str(d).startswith(str(base.resolve())):
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def has_bytes(data: bytes | None) -> bool:
     """上传是否算「有内容」: 非 None 且非空。空文件不算证据(防空壳上传)。"""
     return bool(data)

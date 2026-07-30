@@ -37,10 +37,15 @@ REQUIRED_ROUTES = {
     ("POST", "/api/spotcheck/{queue_id}/assign"),
     ("POST", "/api/spotcheck/{queue_id}/review"),
     ("POST", "/api/spotcheck/{queue_id}/recalibrate"),
-    # Assignment 状态机 (MR-6)
+    # 用户管理 (MR-4 + 删除成员)
+    ("GET", "/api/users"),
+    ("POST", "/api/users/{user_id}/role"),
+    ("DELETE", "/api/users/{user_id}"),
+    # Assignment 状态机 (MR-6) + 撤回已上传产物
     ("GET", "/api/assignments"),
     ("POST", "/api/assignments/{assignment_id}/claim"),
     ("POST", "/api/assignments/{assignment_id}/submit"),
+    ("DELETE", "/api/assignments/{assignment_id}/submissions/{product}"),
     # MR-11 (#47) 差距报告前端接缝 (列表 + 单题)
     ("GET", "/api/gap-report"),
     ("GET", "/api/gap-report/{task_id}"),
