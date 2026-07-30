@@ -186,6 +186,19 @@ function TaskDetailInline({ detail, err, taskId }) {
           )}
           {detail.input_files?.length > 0 ? (
             <Space wrap>
+              {detail.input_files.length > 1 && (
+                <Button type="primary" size="small" icon={<UploadOutlined rotate={180} />}
+                  onClick={async () => {
+                    const hide = message.loading(`正在下载 ${detail.input_files.length} 个素材…`, 0);
+                    let ok = 0;
+                    for (const f of detail.input_files) {
+                      try { await downloadTaskInput(taskId, f); ok += 1; }
+                      catch (e) { message.error(`${f} 下载失败:${e.userMessage || String(e)}`); }
+                    }
+                    hide();
+                    if (ok > 0) message.success(`已下载 ${ok}/${detail.input_files.length} 个前置素材`);
+                  }}>一键下载全部({detail.input_files.length})</Button>
+              )}
               {detail.input_files.map((f) => (
                 <Button key={f} size="small" icon={<UploadOutlined rotate={180} />}
                   onClick={async () => {

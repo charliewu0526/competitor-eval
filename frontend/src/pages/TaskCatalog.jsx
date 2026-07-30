@@ -85,6 +85,21 @@ function TaskPanel({ task, canClaim, onClaim, claiming, claimed }) {
               <Text strong>系统已提供的起始素材(点击下载):</Text>
               <div style={{ marginTop: 6 }}>
                 <Space wrap>
+                  {task.input_files.length > 1 && (
+                    <Button type="primary" size="small" icon={<DownloadOutlined />}
+                      onClick={async () => {
+                        const hide = message.loading(`正在下载 ${task.input_files.length} 个素材…`, 0);
+                        let ok = 0;
+                        for (const f of task.input_files) {
+                          try { await downloadTaskInput(task.task_id, f); ok += 1; }
+                          catch (e) { message.error(`${f} 下载失败:${e.userMessage || String(e)}`); }
+                        }
+                        hide();
+                        if (ok > 0) message.success(`已下载 ${ok}/${task.input_files.length} 个前置素材`);
+                      }}>
+                      一键下载全部({task.input_files.length})
+                    </Button>
+                  )}
                   {task.input_files.map((f) => (
                     <Button key={f} size="small" icon={<DownloadOutlined />}
                       onClick={async () => {
