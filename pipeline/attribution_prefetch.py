@@ -34,11 +34,17 @@ def _has_competitor_at_or_above_baseline(task_scores: list[dict],
 
 
 def prefetch(con, baseline: str = "vio", *, force: bool = False,
-             only_tasks: list[str] | None = None) -> dict:
-    """增量预跑归因落缓存。返回 {scanned, computed, skipped, cached_hit, no_competitor}。
+             only_tasks: list[str] | None = None,
+             also_synthesize: bool = True) -> dict:
+    """增量预跑归因落缓存,并(默认)自动把有实质归因的题提炼成方法初稿(闭环)。
 
+    返回 {scanned, computed, skipped, cached_hit, no_competitor, synthesized}。
     only_tasks: 限定只处理这些 task_id(入库钩子传变化的题); None 则全量扫。
     force: 忽略缓存全部重算。
+    also_synthesize: True(默认)则每算出一条有实质归因点的题, 顺带调
+      method_synth.synthesize_from_attribution 提炼成方法初稿(draft, 去重, 已有则跳)——
+      让「归因 -> 方法初稿」这一环也自动闭环, 不必人工在报告页逐题点提炼。
+      提炼失败不影响归因缓存(如实跳过, 只影响 synthesized 计数)。
     """
     all_scores = STORE.all_scores(con)
     by_task: dict[str, list[dict]] = {}
@@ -46,7 +52,7 @@ def prefetch(con, baseline: str = "vio", *, force: bool = False,
         by_task.setdefault(s.get("task_id"), []).append(s)
 
     stats = {"scanned": 0, "computed": 0, "skipped": 0,
-             "cached_hit": 0, "no_competitor": 0}
+             "cached_hit": 0, "no_competitor": 0, "synthesized": 0}
     for task_id, task_scores in by_task.items():
         if only_tasks is not None and task_id not in only_tasks:
             continue
@@ -83,4 +89,14 @@ def prefetch(con, baseline: str = "vio", *, force: bool = False,
             con, task_id=task_id, baseline=baseline, scores_fingerprint=fp,
             attribution=attr, engine=attr.get("engine"))
         stats["computed"] += 1
+
+        # 闭环: 有实质归因点 -> 自动提炼成方法初稿(draft, 去重)。无 point 的题
+        # (竞品缺据/无需归因)不提炼。提炼失败不影响已落的归因缓存(如实跳过)。
+        if also_synthesize and (attr.get("points") or []):
+            try:
+                from pipeline import method_synth as MSYN
+                created = MSYN.synthesize_from_attribution(con, task_id, attr)
+                stats["synthesized"] += len(created or [])
+            except Exception:
+                pass
     return stats

@@ -37,14 +37,45 @@ class TestPrefetch(unittest.TestCase):
         self._orig_from_store = GR.from_store
         # mock 归因引擎: 直接返回假归因(不读交付物/不调 Claude)
         GR.from_store = lambda con, task_id, baseline="vio", with_attribution=False, **k: _FakeReport(task_id)
+        # mock 方法提炼: 默认 also_synthesize=True 会调它, 挡住不真调 LLM;
+        # 记录被提炼的 task_id 供断言。
+        from pipeline import method_synth as MSYN
+        self._orig_synth = MSYN.synthesize_from_attribution
+        self.synth_calls = []
+
+        def _fake_synth(con, task_id, attr, **k):
+            self.synth_calls.append(task_id)
+            return [{"id": 1, "task_id": task_id}]   # 假装落了一条 draft
+        MSYN.synthesize_from_attribution = _fake_synth
+        self._MSYN = MSYN
 
     def tearDown(self):
         STORE.all_scores = self._orig_scores
         GR.from_store = self._orig_from_store
+        self._MSYN.synthesize_from_attribution = self._orig_synth
         self.con.close()
 
     def _set_scores(self, rows):
         STORE.all_scores = lambda con: rows
+
+    def test_g_auto_synthesize_closes_loop(self):
+        # 有实质归因点 -> 默认 also_synthesize=True 自动提炼方法初稿(闭环)。
+        self._set_scores([_sc("T1", "vio", 0.5), _sc("T1", "town", 0.9)])
+        st = PF.prefetch(self.con, "vio")
+        self.assertEqual(st["synthesized"], 1)
+        self.assertIn("T1", self.synth_calls)
+
+    def test_h_no_synthesize_when_disabled(self):
+        self._set_scores([_sc("T1", "vio", 0.5), _sc("T1", "town", 0.9)])
+        st = PF.prefetch(self.con, "vio", also_synthesize=False)
+        self.assertEqual(st.get("synthesized", 0), 0)
+        self.assertEqual(self.synth_calls, [])
+
+    def test_i_no_competitor_not_synthesized(self):
+        # 无竞品(空归因)不提炼。
+        self._set_scores([_sc("T1", "vio", 0.9), _sc("T1", "town", 0.1)])
+        PF.prefetch(self.con, "vio")
+        self.assertEqual(self.synth_calls, [])
 
     def test_a_competitor_computes(self):
         self._set_scores([_sc("T1", "vio", 0.5), _sc("T1", "town", 0.9)])
