@@ -603,7 +603,6 @@ def get_enums():
 class InviteIn(BaseModel):
     note: str | None = None
     ttl_seconds: float | None = None
-    created_by: str | None = None
 
 
 @app.post("/api/invites")
@@ -1800,10 +1799,6 @@ def approve_method(method_id: int, user=Depends(current_user)):
         logging.getLogger("competitor-eval").exception(
             "记一致率失败 method_id=%s", method_id)
     return _method_view(m)
-
-
-class PrecheckOut(BaseModel):
-    pass
 
 
 @app.post("/api/findings/{finding_id}/precheck")
