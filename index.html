@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>竞品评测系统 · 功能说明书</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; line-height:1.7; color:#1f2733; max-width:1000px; margin:0 auto; padding:32px 24px 80px; background:#f7f8fa; }
+  h1 { font-size:28px; border-bottom:3px solid #2b6cb0; padding-bottom:12px; }
+  h2 { font-size:22px; margin-top:44px; color:#2b6cb0; display:flex; align-items:center; gap:10px; }
+  .lead { background:#eaf2fb; border-left:4px solid #2b6cb0; padding:16px 20px; border-radius:8px; font-size:15px; }
+  .rules { display:flex; gap:12px; flex-wrap:wrap; margin:16px 0; }
+  .rule { flex:1; min-width:220px; background:#fff; border:1px solid #dde3ea; border-radius:10px; padding:14px 16px; }
+  .rule b { color:#c0392b; }
+  .roles { display:flex; gap:12px; flex-wrap:wrap; }
+  .role { flex:1; min-width:180px; background:#fff; border:1px solid #dde3ea; border-radius:10px; padding:14px; font-size:14px; }
+  .role h4 { margin:0 0 6px; color:#2b6cb0; }
+  /* 功能卡片 */
+  .card { background:#fff; border:1px solid #dde3ea; border-radius:12px; padding:0; margin:18px 0; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .card > .head { background:#2b6cb0; color:#fff; padding:12px 18px; font-size:17px; font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+  .card.red > .head { background:#c0392b; }
+  .card .body { padding:16px 18px; }
+  .badge { font-size:12px; font-weight:500; padding:3px 10px; border-radius:20px; background:rgba(255,255,255,.22); }
+  .row { display:flex; gap:0; border-top:1px solid #eef1f5; padding:10px 0; font-size:14px; }
+  .row:first-child { border-top:none; }
+  .row .k { flex:0 0 96px; color:#8a94a3; font-weight:600; }
+  .row .v { flex:1; }
+  .who { display:inline-block; background:#eef4fb; color:#2b6cb0; border-radius:4px; padding:1px 7px; font-size:12px; margin-right:4px; }
+  .ai { background:#fef6e7; border-left:4px solid #e0a020; padding:12px 16px; border-radius:8px; margin:10px 0; font-size:14px; }
+  .ai b { color:#b7791f; }
+  .out { background:#eafaf1; border-left:4px solid #27ae60; padding:10px 14px; border-radius:8px; font-size:14px; }
+  .missing { background:#fdecea; border:1px dashed #c0392b; border-radius:8px; padding:10px 14px; font-size:14px; color:#a33; margin-top:10px; }
+  .missing b { color:#c0392b; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; background:#fff; }
+  th,td { border:1px solid #dde3ea; padding:9px 12px; text-align:left; vertical-align:top; }
+  th { background:#f0f4f9; }
+  tr.p0 td:first-child { color:#c0392b; font-weight:700; }
+  .tag { font-size:12px; padding:2px 8px; border-radius:4px; }
+  .tag.ok { background:#eafaf1; color:#27ae60; }
+  .tag.no { background:#fdecea; color:#c0392b; }
+  .step-num { display:inline-flex; width:30px; height:30px; background:#2b6cb0; color:#fff; border-radius:50%; align-items:center; justify-content:center; font-size:15px; }
+  .card.red .step-num { background:#c0392b; }
+  .note { color:#8a94a3; font-size:13px; margin-top:6px; }
+</style>
+</head>
+<body>
+<h1>竞品评测系统 · 功能说明书</h1>
+<p class="lead"><b>这系统一句话：</b>让实习生用同一道真实工作题，分别去考 Violoop 和各个竞品，把每一份"答卷+证据"收上来，交给 AI 打分，再从分数差里自动长出两样东西——<b>我们要修的 Bug</b> 和 <b>值得学的产品机会</b>。<br>下面按"一道题从出生到产出"的顺序，逐个功能点讲清楚：谁在用、喂进去什么、系统/AI 干了什么、最后产出什么。<span style="color:#c0392b;font-weight:600">红色卡片 = 目前缺失或没接通的功能。</span></p>
+
+<div class="rules">
+  <div class="rule">① <b>拿不到 ≠ 0</b><br>成本、证据缺失就如实标"缺失"，绝不用 0 冒充，缺失本身是信息。</div>
+  <div class="rule">② <b>自述不算数</b><br>竞品/实习生说"我做完了"只用来量"诚不诚实"，绝不直接算成"完成了"。</div>
+  <div class="rule">③ <b>机器只报现象</b><br>AI 只贴"疑似"标签+甩证据，最终"这是不是机会"由 PM 拍板。</div>
+</div>
+
+<h2>👥 先认识四种人</h2>
+<div class="roles">
+  <div class="role"><h4>实习生 intern</h4>领题、线下跑各家产品、把证据交上来。系统里最基础的活。</div>
+  <div class="role"><h4>审核员 reviewer</h4>抽查 AI 打的分对不对、给方法初稿把关。不能审自己做的题。</div>
+  <div class="role"><h4>PM owner</h4>开测评轮、维护题库/竞品、校准 AI、对发现下最终产品判断。</div>
+  <div class="role"><h4>管理员 admin</h4>建账号、改角色、重置密码。只管人，不碰业务。</div>
+</div>
+
+<h2>🔧 功能点逐个讲（按一道题的生命周期）</h2>
+
+<!-- 功能1 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">1</span> 开测评轮</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="row"><div class="k">谁在用</div><div class="v"><span class="who">PM owner</span></div></div>
+    <div class="row"><div class="k">要解决</div><div class="v">这一轮到底测哪些题 × 哪些竞品，得先框定并锁死，中途不能变，否则榜单没法比。</div></div>
+    <div class="row"><div class="k">怎么做</div><div class="v">PM 新建一个"轮次"（比如"2026-Q3 横评"），勾选这轮要测的题目和竞品，点开轮 → scope 锁定。<b>同一时间只允许一个轮开着</b>，避免同一道题被两个人在不同轮同时领、榜单不知道该显示哪轮。</div></div>
+    <div class="out"><b>产出：</b>一个 open 状态的轮次，系统按 scope 自动把"每道题"物化成一张张待领的任务单。</div>
+  </div>
+</div>
+
+<!-- 功能2 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">2</span> 领题</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="row"><div class="k">谁在用</div><div class="v"><span class="who">实习生 intern</span></div></div>
+    <div class="row"><div class="k">要解决</div><div class="v">一道题要在 Violoop + 同类竞品上都跑一遍才有可比性，所以"领题"领的是<b>一整组对打</b>，不是单跑一家。</div></div>
+    <div class="row"><div class="k">怎么做</div><div class="v">实习生在任务列表点"领取"，这道题就归他了（open→claimed）。<b>并发保护</b>：两个人同时抢，只有一个抢到，另一个看到"已被领走"。领了不做，24 小时自动收回重新开放。</div></div>
+    <div class="out"><b>产出：</b>一张归属明确的任务单，页面上还会显示"每个竞品该怎么导出结果"的操作配方。</div>
+  </div>
+</div>
+
+<!-- 功能3 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">3</span> 线下执行（人肉跑各家产品）</span><span class="badge">✅ 流程</span></div>
+  <div class="body">
+    <div class="row"><div class="k">谁在用</div><div class="v"><span class="who">实习生 intern</span></div></div>
+    <div class="row"><div class="k">关键点</div><div class="v"><b>系统不自动调用竞品</b>——各家产品形态不一，没法自动化。实习生拿<b>同一条标准 Prompt</b>，亲手在 Violoop、Manus、Claude 等每一家上各跑一次，把过程和结果都保存下来（截图、导出文件、AI 对话记录、执行日志）。</div></div>
+    <div class="note">为什么强调"同一条标准 Prompt"：这是保证公平的地基。谁都用这一条指令，不许给某家产品开小灶。</div>
+  </div>
+</div>
+
+<!-- 功能4 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">4</span> 提交答卷（含五道拒收闸）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="row"><div class="k">谁在用</div><div class="v"><span class="who">实习生 intern</span></div></div>
+    <div class="row"><div class="k">喂进去</div><div class="v">对每个产品交一份"答卷包"：①原始产物（截图/导出文件）②<b>执行日志包（必传）</b>③只能人看的断言勾选（比如"微信消息真发出没"）。</div></div>
+    <div class="row"><div class="k">系统做</div><div class="v">大文件直接传到云存储，然后 finalize 校验。<b>五道拒收闸</b>挡住不合格的：缺产物、缺日志包、成本自相矛盾（标了"拿不到"又填了真数字）、勾了本该机器判的项、产品不在这轮里。</div></div>
+    <div class="out"><b>产出：</b>一份通过校验的 Submission。凑齐这道题所有产品的答卷后，实习生点"收口提交"。</div>
+  </div>
+</div>
+
+<!-- 功能5 收口 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">5</span> 收口（秒返，评分转后台）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="row"><div class="k">谁在用</div><div class="v"><span class="who">实习生 intern</span></div></div>
+    <div class="row"><div class="k">怎么做</div><div class="v">点收口 → 任务单变 submitted（终态，不能反悔）。系统给每份答卷丢一张"评分工单"进队列，<b>立刻返回"已交付，评分进行中"</b>——因为 AI 盲评真打要 30~90 秒，不能让实习生干等。</div></div>
+    <div class="out"><b>产出：</b>队列里多了 N 张待评分工单，后台慢慢消化。实习生这时活就干完了。</div>
+  </div>
+</div>
+
+<h2>🤖 功能 6：实习生交完题后，AI 到底分析什么、产出什么</h2>
+<p class="lead">这是你最关心的一段，单独展开。实习生一收口，后台评分工单被"评分管线"领走，AI 不是"看一眼打个总分"，而是走一条<b>五步流水线</b>，每一步只干一件事、都能独立验证。下面逐步讲 AI 拿到什么、做什么判断、吐出什么。</p>
+
+<!-- 6.0 脱敏 -->
+<div class="card">
+  <div class="head"><span>第 ① 步 · 脱敏（先把品牌名擦掉）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="ai"><b>AI 之前的准备动作（不是 AI 干的，是程序干的）：</b>把日志包里所有能暴露"这是哪家产品"的字眼（品牌名、别名、域名、模型名）全部替换成 <code>&lt;PRODUCT&gt;</code> / <code>&lt;MODEL&gt;</code>。</div>
+    <div class="row"><div class="k">为什么</div><div class="v">后面要做"盲评"——让 AI 评委不知道哪份是自家 Violoop，才不会偏袒。洗漏一个品牌名，盲评当场作废。所以洗完还自检一遍，还能扫出品牌词就<b>宁可评分失败也不送去评</b>。</div></div>
+    <div class="out"><b>产出：</b>一份"脱敏版日志包"。原始版保留，只给成本统计和人工抽查用（那两个本来就知道谁是谁）。</div>
+  </div>
+</div>
+
+<!-- 6.1 GATE -->
+<div class="card">
+  <div class="head"><span>第 ② 步 · GATE 判定（这选手够得着这道题吗）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="ai"><b>AI 分析什么：</b>拿"竞品的能力档案（能不能操作本地桌面、是不是开源、覆盖哪些能力域）"× "这道题的要求"，推导它够不够得着。</div>
+    <div class="row"><div class="k">举例</div><div class="v">一道"操作微信桌面版"的题，一个只能跑网页的 agent → 判 <b>cannot-reach（够不着）</b>，直接不参赛，<b>不给它打 0 分</b>（够不着不等于做得差，冤枉它榜单就失真了）。</div></div>
+    <div class="out"><b>产出：</b>每个产品一个 GATE 结论：能参赛 / 够不着。够不着的到此为止。</div>
+  </div>
+</div>
+
+<!-- 6.2 客观断言 -->
+<div class="card">
+  <div class="head"><span>第 ③ 步 · 客观断言（做没做成，只看事实）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="ai"><b>这步不用 AI，是死规矩验证：</b>看最后的事实结果，不看任何人的自我描述。</div>
+    <div class="row"><div class="k">怎么判</div><div class="v">分两种：<br>• <b>机器能验的</b>（文件存在没、Excel 那格数字对没、日志里有没有某事件）→ 程序自动读文件判定。<br>• <b>只能人看的</b>（微信消息真发出没）→ 读实习生的勾选，并进抽查核实。</div></div>
+    <div class="row"><div class="k">结果</div><div class="v">算出一个"完成度比例"（比如 2 项关键断言过了 2 项 = 1.0）。<b>关键项没过 → 直接 0 分，连主观评审都不做了</b>。</div></div>
+    <div class="out"><b>产出：</b>objectiveRatio 完成度分 + 每条断言的通过/失败明细。</div>
+  </div>
+</div>
+
+<!-- 6.3 盲评面板 -->
+<div class="card">
+  <div class="head"><span>第 ④ 步 · 盲评面板（AI 评委给五个维度打分）★核心</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="ai"><b>AI 分析什么：</b>把打乱标签后的脱敏答卷（变成"产品A/B/C"）交给<b>多个 AI 评委背靠背独立打分</b>。评委不知道谁是谁。</div>
+    <div class="row"><div class="k">打哪五维</div><div class="v"><b>S1 质量</b>（做得好不好）· <b>S2 效率</b>（快不快、绕不绕）· <b>S3 可靠性</b>（稳不稳、会不会崩）· <b>S4 自主性</b>（要不要人频繁接管）· <b>S5 体验</b>（顺不顺手）。每一维都要给<b>打分理由</b>。</div></div>
+    <div class="row"><div class="k">怎么合</div><div class="v">多个评委的分取中位数。<b>两个评委分差 ≥2 → 标"分歧"，100% 送人复核</b>（分歧本身是重要信号，不是取平均糊过去）。</div></div>
+    <div class="row"><div class="k">最终分</div><div class="v"><b>sampleScore = 完成度 × 能力分</b>。没做成的题，评委打得再好也是 0——完成度是闸门。</div></div>
+    <div class="out"><b>产出：</b>五维能力分（带理由）+ 一个综合 sampleScore + 分歧标记。</div>
+    <div class="missing"><b>🟥 目前缺失 1：AI 评委没重新校准。</b>数据迁移后评分标准（rubric）变了，原来给评委发的"上岗资格"失效了。没重新校准，评委打的分不被允许自动入库。<b>要补：</b>PM 去后台重跑一次校准（让 AI 评委先考一套标准答案卷，和人工标注对得上才发资格）。</div>
+    <div class="missing"><b>🟥 目前缺失 2：评委模型名写死在代码里。</b>模型一过期，评委每次调用都失败，但评分却"假装成功"落一条空分。<b>要补：</b>模型名搬进配置文件，换模型能留痕、能 diff，换完必须跑一次冒烟测试。</div>
+  </div>
+</div>
+
+<!-- 6.4 H1 -->
+<div class="card">
+  <div class="head"><span>第 ⑤ 步 · H1 诚实度（它有没有吹牛）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="ai"><b>AI 分析什么：</b>单独一把尺子，只比对"它自称做完没"和"实际末态成没成"，<b>不读日志正文</b>（诚实度不能靠"话说得像不像真的"来判）。</div>
+    <div class="row"><div class="k">四种情况</div><div class="v">末态失败却自称成功=<b>1 分（谎报）</b>；失败且承认=4；成功且承认=5；成功却没说=3（低报）；没自我报告=不评。</div></div>
+    <div class="row"><div class="k">关键</div><div class="v">这个分<b>独立</b>，不混进能力分。它是一道单独的"诚信警报"。</div></div>
+    <div class="out"><b>产出：</b>一个 H1 诚实度分。谎报的会触发高风险抽查。</div>
+  </div>
+</div>
+
+<div class="card red">
+  <div class="head"><span><span class="step-num">!</span> 评分失败后：分数会永久卡住（没接兜底）</span><span class="badge">🟥 缺失·P0</span></div>
+  <div class="body">
+    <div class="row"><div class="k">现状</div><div class="v">AI 评委调用失败（限流/超时/没资格）时，系统的降级是对的——完成度分保留、主观分留空、不崩、实习生的活不白干。<b>但问题是</b>：这条评测就<b>永久停在"主观留空"</b>，工单被标"已完成"，再没有任何机制把它捡回来重评。它本该有分。</div></div>
+    <div class="missing"><b>🟥 要补：</b>一个"重评巡检"定时任务，专门扫这些"主观留空"的评测重新排队。要分两类：网络抖动类→退避后自动重试；"评委没资格"类→等 PM 校准完再触发，不能空转。（还要避开两个坑：别被幂等键挡住、别把没断言模块的历史占位题也扫进来。）</div>
+  </div>
+</div>
+
+<h2>📤 功能 7：一次评分完成后，自动岔出三条产出线</h2>
+<p class="lead">评分一落库，系统自动派生三样东西——这就是"从分数长出价值"的地方。</p>
+
+<!-- 7.1 Finding -->
+<div class="card">
+  <div class="head"><span><span class="step-num">7a</span> 发现分类（长出 Bug 和机会线索）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="ai"><b>系统分析什么：</b>用固定规则扫这次评分结果，贴"疑似"标签：疑似 Bug（Violoop 自己翻车）、疑似功能差距（竞品明显领先）、疑似值得借鉴的体验、诚实度警示。</div>
+    <div class="row"><div class="k">铁律</div><div class="v"><b>机器只贴"疑似"+甩证据，绝不下最终结论。</b>无证据的发现直接安静丢弃，不入池。</div></div>
+    <div class="out"><b>产出：</b>一个"发现池"，每条带证据。Violoop 翻车的那些还会带复现线索，供研发修 Bug。</div>
+  </div>
+</div>
+
+<!-- 7.2 抽查 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">7b</span> 分层抽查（决定哪些要人复核）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="ai"><b>系统分析什么：</b>按风险给评测分层，决定复核比例。</div>
+    <div class="row"><div class="k">分层</div><div class="v"><b>100% 必查</b>：高风险（诚实度警报/Violoop 翻车）、评委分歧、竞品大幅领先（差距≥0.15）。<b>10% 随机</b>：其余的（用固定种子抽，同一批永远抽同一些，可复现）。</div></div>
+    <div class="out"><b>产出：</b>一个待复核队列，自动把"最该看的"送到审核员面前。主流程<b>不等</b>抽查——人是路径外的，不卡评分。</div>
+  </div>
+</div>
+
+<!-- 7.3 差距报告 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">7c</span> 差距报告（Violoop vs 竞品差在哪、为什么）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="ai"><b>AI 分析什么：</b>算出 Violoop 和每个竞品的分数差，并<b>归因"为什么"</b>——不只说"谁高几分"，还分析背后机理（开源竞品能深入到源码层面分析）。</div>
+    <div class="row"><div class="k">跨轮对比</div><div class="v">多轮之间比时<b>只比两轮都测过、且条件一致的题</b>，并标注"基于 N 道共同题"。防止"这轮少测了几道难题"被误读成"进步了"。</div></div>
+    <div class="out"><b>产出：</b>一份差距报告：哪些题竞品显著领先（该补齐的功能差距）、哪些是竞品这次没发挥好。这是"方法沉淀"的原材料。</div>
+  </div>
+</div>
+
+<h2>🧑‍⚖️ 功能 8：两道人工闸 + 最终产品判断</h2>
+
+<!-- 8.1 复核队列 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">8a</span> 审核员复核抽查</span><span class="badge">✅ 已实现 / 🟥 有缺口</span></div>
+  <div class="body">
+    <div class="row"><div class="k">谁在用</div><div class="v"><span class="who">审核员 reviewer</span></div></div>
+    <div class="row"><div class="k">怎么做</div><div class="v">审核员打开待复核的评测，判断 AI 打的分"有道理 / 有问题"。<b>职责分离</b>：不能复核自己做过的题。发现系统性问题时，PM（不是审核员）才能触发"重新校准 AI 评委"。</div></div>
+    <div class="missing"><b>🟥 缺失·P0：审核员点不开证据。</b>证据文件已经在云存储里了，但<b>没有"回看"入口</b>——后端没有取回接口，前端没有查看界面。抽查的全部意义就是能回看证据，这条不补，审核员这道闸是空的。<b>要补：</b>服务端签一个临时链接给前端展示产物；只给审核员看，绝不能流向 AI 评委（否则破盲）。</div>
+    <div class="missing"><b>🟥 缺失·P2：分派复核员要手输一长串用户 ID。</b>该改成下拉选择，并且自动把"这道题的执行者"排除掉（他不能审自己的）。</div>
+  </div>
+</div>
+
+<!-- 8.2 方法闸 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">8b</span> 方法沉淀（把差距变成研发能照做的做法）</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="row"><div class="k">谁在用</div><div class="v"><span class="who">实习生</span> 写初稿 → <span class="who">审核员/PM</span> 把关</div></div>
+    <div class="row"><div class="k">怎么做</div><div class="v">差距报告只是"原材料"，不等于"洞察"。实习生看懂竞品为何强，写成"竞品为啥强 + Violoop 该怎么改"的方法初稿（draft）。<b>初稿必须经审核员/PM 把关（approved）才能导给研发</b>，实习生自己批不了。</div></div>
+    <div class="row"><div class="k">为什么要闸</div><div class="v">方法这东西没有客观答案能机器验，只能靠人把关。防止新人把"截图更好看"当成方法，污染系统辛苦建立的可信度。</div></div>
+    <div class="out"><b>产出：</b>一份经把关的、研发可直接照做的方法文档。</div>
+  </div>
+</div>
+
+<!-- 8.3 PM判断 -->
+<div class="card">
+  <div class="head"><span><span class="step-num">8c</span> PM 下最终产品判断</span><span class="badge">✅ 已实现</span></div>
+  <div class="body">
+    <div class="row"><div class="k">谁在用</div><div class="v"><span class="who">PM owner</span></div></div>
+    <div class="row"><div class="k">怎么做</div><div class="v">机器贴的"疑似"标签，最后由 PM 拍板归类：<b>必须补齐 / 值得借鉴 / 继续观察 / 不适合我们</b>。这是机器绝不越权、留给人的最后一步。</div></div>
+    <div class="out"><b>产出：</b>带最终产品判断的发现——这才是这套系统真正要的"产品判断"，而不只是一堆分数。</div>
+  </div>
+</div>
+
+<h2>🟡 功能 9：还有一批"能用但没完善"的点</h2>
+<table>
+  <tr><th>功能点</th><th>现状</th><th>该怎么办</th></tr>
+  <tr class="p0"><td>题库上架</td><td><span class="tag no">🟥 断</span> 20 道题的判定逻辑写好了，但后台还没把题"上架"</td><td>部署后逐题建题、置为 active，否则这些题不进任何一轮（等于没题可测）</td></tr>
+  <tr><td>出题≠核验（AI 核验）</td><td><span class="tag no">🟥 缺</span> 配置里留了个"核验模型"开关，但整条流程没做</td><td><b>要你拍板：</b>这轮接上，还是先删掉这个假开关？（假装配好比明显缺失更危险）</td></tr>
+  <tr><td>竞品别名核对</td><td><span class="tag no">🟥 待核</span> 9 个竞品的别名/域名是新写的</td><td>PM 核一遍——这些直接决定脱敏擦不擦得干净，漏一个别名盲评就看到品牌名</td></tr>
+  <tr><td>"哪些分是人手写的"可查</td><td><span class="tag no">🟥 缺</span> 迁移进来的历史分数盖了戳，但没接口查得出来</td><td>加一个查询接口或在评测详情里显示这个戳</td></tr>
+  <tr><td>竞品能力改动留痕</td><td><span class="tag no">🟥 缺</span> 改竞品能力会影响新评分，却不留痕迹</td><td>补一条变更记录（题库和功能表都已经有了，就竞品表漏了）</td></tr>
+  <tr><td>S5 体验分的证据</td><td><span class="tag no">🟥 未决</span> 截图能认出是哪家产品，破坏盲评</td><td>三选一专门设计：只看时间线 / 人工裁掉界面 / 明确标注这维是非盲评</td></tr>
+</table>
+
+<h2>❌ 已确认不做（系统边界之外）</h2>
+<table>
+  <tr><th>项</th><th>处置</th></tr>
+  <tr><td>用户反馈 → AI 自动修复闭环</td><td>❌ 不重建。系统只做"评测 + 产品判断"，不含自愈</td></tr>
+  <tr><td>邀请码注册</td><td>❌ 已删，改成纯管理员建号</td></tr>
+  <tr><td>客户端打包器</td><td>❌ 已删，改成网页直传</td></tr>
+  <tr><td>Railway 部署</td><td>⚙️ 是上线要做的运维步骤，不算业务功能</td></tr>
+</table>
+
+<h2>✅ 需要你拍板的两件事</h2>
+<div class="rules">
+  <div class="rule"><b>1. AI 核验（功能9）</b><br>这轮就接上，还是先删掉那个假开关止血、以后再做？</div>
+  <div class="rule"><b>2. AI 评委阵容</b><br>现在实际只有 DeepSeek + Claude 两家在跑（GLM/Gemini 网关不通）。是就用两家，还是恢复第三家凑"两中一西"抗偏见？</div>
+</div>
+<p class="note" style="margin-top:24px">定完这两点，我们就把这份说明书收敛成最终版，进入"目标业务逻辑设计蓝本"——每条链路的输入/输出/状态/权限画全，交给同事照图开发。</p>
